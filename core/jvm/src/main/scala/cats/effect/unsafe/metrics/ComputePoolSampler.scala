@@ -1,0 +1,35 @@
+/*
+ * Copyright 2020-2021 Typelevel
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package cats.effect.unsafe
+package metrics
+
+/**
+ * An implementation of the [[ComputePoolSamplerMBean]] interface which
+ * simply delegates to the appropriate methods of the backing
+ * [[cats.effect.unsafe.WorkStealingThreadPool]].
+ *
+ * @param threadPool the backing work stealing thread pool
+ */
+class ComputePoolSampler(threadPool: WorkStealingThreadPool) extends ComputePoolSamplerMBean {
+  def getWorkerThreadCount: Int = threadPool.getWorkerThreadCount
+  def getActiveThreadCount: Int = threadPool.getActiveThreadCount
+  def getSearchingThreadCount: Int = threadPool.getSearchingThreadCount
+  def getBlockingHelperThreadCount: Int = threadPool.getBlockingHelperThreadCount
+  def getQueuedFiberCount: Int = threadPool.getQueuedFiberCount
+  def getQueuedFiberCountInOverflowQueue: Int = threadPool.getQueuedFiberCountInOverflowQueue
+  def getQueuedFiberCountInLocalQueues: Int = threadPool.getQueuedFiberCountInLocalQueues
+}

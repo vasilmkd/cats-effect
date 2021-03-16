@@ -96,10 +96,16 @@ private[effect] final class WorkStealingThreadPool(
   private[this] val state: AtomicInteger = new AtomicInteger(threadCount << UnparkShift)
 
   /**
+   * An atomic counter used for keeping track of the active number of helper
+   * threads.
+   */
+  private[this] val blockingThreadCounter: AtomicInteger = new AtomicInteger(0)
+
+  /**
    * An atomic counter used for generating unique indices for distinguishing and
    * naming helper threads.
    */
-  private[this] val blockingThreadCounter: AtomicInteger = new AtomicInteger(0)
+  private[this] val blockingThreadNameIndexCounter: AtomicInteger = new AtomicInteger(0)
 
   /**
    * The shutdown latch of the work stealing thread pool.
@@ -122,6 +128,7 @@ private[effect] final class WorkStealingThreadPool(
           threadCount,
           threadPrefix,
           blockingThreadCounter,
+          blockingThreadNameIndexCounter,
           queue,
           parkedSignal,
           overflowQueue,
@@ -455,5 +462,100 @@ private[effect] final class WorkStealingThreadPool(
       overflowQueue.clear()
       Thread.currentThread().interrupt()
     }
+  }
+
+  /**
+   * Returns the number of worker threads in this thread pool.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.ComputePoolSamplerMBean]] interface.
+   *
+   * @return the number of worker threads in this thread pool
+   */
+  private[unsafe] def getWorkerThreadCount: Int = threadCount
+
+  /**
+   * Returns the number of active worker threads currently executing fibers.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.ComputePoolSamplerMBean]] interface.
+   *
+   * @return the number of currently active worker threads
+   */
+  private[unsafe] def getActiveThreadCount: Int = {
+    val st = state.get()
+    (st & UnparkMask) >>> UnparkShift
+  }
+
+  /**
+   * Returns the number of worker threads searching for work to steal from other
+   * worker threads.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.ComputePoolSamplerMBean]] interface.
+   *
+   * @return the number of worker threads searching for work
+   */
+  private[unsafe] def getSearchingThreadCount: Int = {
+    val st = state.get()
+    st & SearchMask
+  }
+
+  /**
+   * Returns the number of currently active helper threads substituting for
+   * worker threads currently executing blocking actions.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.ComputePoolSamplerMBean]] interface.
+   *
+   * @return the number of currently active helper threads
+   */
+  private[unsafe] def getBlockingHelperThreadCount: Int =
+    blockingThreadCounter.get()
+
+  /**
+   * Returns the global number of fibers waiting to be executed by a worker
+   * thread. This number consists of all the fibers enqueued on the overflow
+   * queue, as well as the fibers in the local queues of the worker threads
+   * themselves.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.ComputePoolSamplerMBean]] interface.
+   *
+   * @return the number of fibers waiting to be executed by a worker thread
+   */
+  private[unsafe] def getQueuedFiberCount: Int =
+    getQueuedFiberCountInOverflowQueue + getQueuedFiberCountInLocalQueues
+
+  /**
+   * Returns the number of fibers enqueued on the overflow queue. This queue
+   * also accepts fibers scheduled for execution by external threads.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.ComputePoolSamplerMBean]] interface.
+   *
+   * @return the number of fibers enqueued on the overflow queue
+   */
+  private[unsafe] def getQueuedFiberCountInOverflowQueue: Int =
+    overflowQueue.size()
+
+  /**
+   * Returns the number of fibers enqueued in the local queues of the worker
+   * threads. This is an aggregate number consisting of metrics from all
+   * worker threads.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.ComputePoolSamplerMBean]] interface.
+   *
+   * @return the number of fibers enqueued in the local queues
+   */
+  private[unsafe] def getQueuedFiberCountInLocalQueues: Int = {
+    var i = 0
+    var count = 0
+    while (i < threadCount) {
+      count += localQueues(i).size()
+      i += 1
+    }
+    count
   }
 }

@@ -58,6 +58,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 private[effect] final class HelperThread(
     private[this] val threadPrefix: String,
     private[this] val blockingThreadCounter: AtomicInteger,
+    private[this] val blockingThreadNameIndexCounter: AtomicInteger,
     private[this] val overflow: ConcurrentLinkedQueue[IOFiber[_]],
     private[this] val pool: WorkStealingThreadPool)
     extends Thread
@@ -83,7 +84,8 @@ private[effect] final class HelperThread(
     setDaemon(true)
 
     // Set the name of this helper thread.
-    setName(s"$threadPrefix-blocking-helper-${blockingThreadCounter.incrementAndGet()}")
+    setName(
+      s"$threadPrefix-blocking-helper-${blockingThreadNameIndexCounter.incrementAndGet()}")
   }
 
   /**
@@ -119,6 +121,9 @@ private[effect] final class HelperThread(
    * for the [[HelperThread]] to exit its runloop and die.
    */
   override def run(): Unit = {
+    // Registers this helper thread in the global counter.
+    blockingThreadCounter.incrementAndGet()
+
     // Check for exit condition. Do not continue if the `WorkStealingPool` has
     // been shut down, or the `WorkerThread` which spawned this `HelperThread`
     // has finished blocking.
@@ -139,6 +144,11 @@ private[effect] final class HelperThread(
         fiber.run()
       }
     }
+
+    // This helper thread is finishing and is no longer counted in the global
+    // counter.
+    blockingThreadCounter.decrementAndGet()
+    ()
   }
 
   /**
@@ -158,7 +168,12 @@ private[effect] final class HelperThread(
       blocking = true
 
       // Spawn a new `HelperThread`.
-      val helper = new HelperThread(threadPrefix, blockingThreadCounter, overflow, pool)
+      val helper = new HelperThread(
+        threadPrefix,
+        blockingThreadCounter,
+        blockingThreadNameIndexCounter,
+        overflow,
+        pool)
       helper.start()
 
       // With another `HelperThread` started, it is time to execute the blocking
