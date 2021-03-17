@@ -16,10 +16,15 @@
 
 package cats.effect.unsafe
 
+import cats.effect.unsafe.metrics.{ComputePoolSampler, LocalQueueSampler}
+
+import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 
+import java.lang.management.ManagementFactory
 import java.util.concurrent.{Executors, ScheduledThreadPoolExecutor}
 import java.util.concurrent.atomic.AtomicInteger
+import javax.management.ObjectName
 
 private[unsafe] abstract class IORuntimeCompanionPlatform { this: IORuntime.type =>
 
@@ -27,10 +32,46 @@ private[unsafe] abstract class IORuntimeCompanionPlatform { this: IORuntime.type
   def createDefaultComputeThreadPool(
       self: => IORuntime,
       threads: Int = Math.max(2, Runtime.getRuntime().availableProcessors()),
-      threadPrefix: String = "io-compute"): (WorkStealingThreadPool, () => Unit) = {
+      threadPrefix: String = "io-compute",
+      registerMBeans: Boolean = false,
+      mBeansPostfix: String = ""): (WorkStealingThreadPool, () => Unit) = {
     val threadPool =
       new WorkStealingThreadPool(threads, threadPrefix, self)
-    (threadPool, { () => threadPool.shutdown() })
+
+    val objectNames = mutable.Set.empty[ObjectName]
+    val mBeanServer = ManagementFactory.getPlatformMBeanServer()
+
+    if (registerMBeans) {
+      val computePoolSamplerName =
+        new ObjectName(s"cats.effect.unsafe.metrics:type=ComputePoolSampler$mBeansPostfix")
+      val computePoolSampler = new ComputePoolSampler(threadPool)
+      mBeanServer.registerMBean(computePoolSampler, computePoolSamplerName)
+      objectNames += computePoolSamplerName
+
+      threadPool.getLocalQueues.zipWithIndex.foreach {
+        case (queue, index) =>
+          val localQueueSamplerName =
+            new ObjectName(
+              s"cats.effect.unsafe.metrics:type=LocalQueueSampler$mBeansPostfix-$index")
+          val localQueueSampler = new LocalQueueSampler(queue)
+          mBeanServer.registerMBean(localQueueSampler, localQueueSamplerName)
+          objectNames += localQueueSamplerName
+      }
+    }
+
+    val unregister = { () =>
+      if (registerMBeans) {
+        objectNames.foreach(mBeanServer.unregisterMBean)
+      }
+    }
+
+    (
+      threadPool,
+      { () =>
+        unregister()
+        threadPool.shutdown()
+      }
+    )
   }
 
   def createDefaultBlockingExecutionContext(
@@ -73,7 +114,10 @@ private[unsafe] abstract class IORuntimeCompanionPlatform { this: IORuntime.type
   lazy val global: IORuntime = {
     if (_global == null) {
       installGlobal {
-        val (compute, _) = createDefaultComputeThreadPool(global)
+        val (compute, _) = createDefaultComputeThreadPool(
+          global,
+          registerMBeans = true,
+          mBeansPostfix = "-global")
         val (blocking, _) = createDefaultBlockingExecutionContext()
         val (scheduler, _) = createDefaultScheduler()
 

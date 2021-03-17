@@ -40,7 +40,10 @@ trait IOApp {
 
       IORuntime installGlobal {
         val (compute, compDown) =
-          IORuntime.createDefaultComputeThreadPool(runtime, threads = computeWorkerThreadCount)
+          IORuntime.createDefaultComputeThreadPool(
+            runtime,
+            threads = computeWorkerThreadCount,
+            registerMBeans = true)
 
         val (blocking, blockDown) =
           IORuntime.createDefaultBlockingExecutionContext()
