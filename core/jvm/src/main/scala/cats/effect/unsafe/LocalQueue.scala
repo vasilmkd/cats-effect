@@ -207,6 +207,44 @@ private final class LocalQueue {
    */
   private[this] val overflowBuffer: ArrayList[IOFiber[_]] = new ArrayList(OverflowBatchSize)
 
+  /*
+   * What follows is a collection of counters exposed through the
+   * `cats.effect.unsafe.metrics.LocalQueueSamplerMBean` interface.
+   */
+
+  /**
+   * A running counter of the number of fibers enqueued on this local queue
+   * during the lifetime of the queue. This variable is published through the
+   * `tail` of the queue. In order to observe the latest value, the
+   * `tailPublisher` atomic field should be loaded first.
+   */
+  private[this] var totalFiberCount: Long = 0L
+
+  /**
+   * A running counter of the number of fibers spilled over to the overflow
+   * queue during the lifetime of the queue. This variable is not published
+   * through any reliable mechanism and should be expected to lag behind the
+   * real value when observed from a different thread. It is still a useful
+   * metric nonetheless.
+   */
+  private[this] var totalSpilloverCount: Long = 0L
+
+  /**
+   * A running counter of the number of successful steal attempts carried out
+   * by other [[WorkerThread]]s during the lifetime of the queue. This variable
+   * is published through the `head` of the queue. In order to observe the
+   * latest value, the `head` atomic field should be loaded first.
+   */
+  private[this] var successfulStealAttemptCount: Long = 0L
+
+  /**
+   * A running counter of the number of fibers stolen by other [[WorkerThread]]s
+   * during the lifetime of the queue. This variable is published through the
+   * `head` of the queue. In order to observe the latest value, the `head`
+   * atomic field should be loaded first.
+   */
+  private[this] var stolenFiberCount: Long = 0L
+
   /**
    * Enqueues a fiber for execution at the back of this queue.
    *
@@ -251,6 +289,7 @@ private final class LocalQueue {
         // value, publish it for other threads and break out of the loop.
         val idx = index(tl)
         buffer(idx) = fiber
+        totalFiberCount += 1
         val newTl = unsignedShortAddition(tl, 1)
         tailPublisher.lazySet(newTl)
         tail = newTl
@@ -263,6 +302,7 @@ private final class LocalQueue {
         // Outcome 2, there is a concurrent stealer and there is no available
         // capacity for the new fiber. Proceed to enqueue the fiber on the
         // overflow queue and break out of the loop.
+        totalSpilloverCount += 1
         overflow.offer(fiber)
         return
       }
@@ -294,6 +334,7 @@ private final class LocalQueue {
         overflowBuffer.add(fiber)
         // Enqueue all of the fibers on the overflow queue with a bulk add
         // operation.
+        totalSpilloverCount += OverflowBatchSize
         overflow.addAll(overflowBuffer)
         // Reset the overflow buffer before the next use.
         overflowBuffer.clear()
@@ -474,6 +515,8 @@ private final class LocalQueue {
         // stealing operation is done, by moving the "steal" tag to match the
         // "real" value of the head. Opportunistically try to set it without
         // reading the `head` again.
+        stolenFiberCount += n
+        successfulStealAttemptCount += 1
         hd = newHd
         while (true) {
           newHd = pack(newReal, newReal)
@@ -710,4 +753,149 @@ private final class LocalQueue {
    * @return the unsigned 16 bit difference as a 32 bit integer value
    */
   private[this] def unsignedShortSubtraction(x: Int, y: Int): Int = lsb(x - y)
+
+  /**
+   * Returns the number of fibers currently enqueued on the local queue.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the number of currently enqueued fibers
+   */
+  def getFiberCount: Int = size()
+
+  /**
+   * Returns the index in the circular buffer to which the head of the local
+   * queue is pointing to.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the index into the circular buffer representing the head of the
+   *         local queue
+   */
+  def getHeadIndex: Int = {
+    val hd = head.get()
+    index(lsb(hd))
+  }
+
+  /**
+   * Returns the index in the circular buffer to which the tail of the local
+   * queue is pointing to.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the index into the circular buffer representing the tail of the
+   *         local queue
+   */
+  def getTailIndex: Int = {
+    val tl = tailPublisher.get()
+    index(tl)
+  }
+
+  /**
+   * Returns the total number of fibers that have been enqueued on this local
+   * queue during the lifetime of the queue.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the total number of fibers that have been enqueued on this local
+   *         queue
+   */
+  def getTotalFiberCount: Long = {
+    tailPublisher.get()
+    totalFiberCount
+  }
+
+  /**
+   * Returns the total number of fibers that have been spilled over to the
+   * overflow queue during the lifetime of the queue.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the total number of fibers that have been spilled over to the
+   *         overflow queue
+   */
+  def getTotalSpilloverCount: Long = {
+    head.get()
+    totalSpilloverCount
+  }
+
+  /**
+   * Returns the number of successful steal attempts by other worker threads
+   * from this local queue during the lifetime of the queue.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the number of successful steal attempts by other worker threads
+   */
+  def getSuccessfulStealAttemptCount: Long = {
+    head.get()
+    successfulStealAttemptCount
+  }
+
+  /**
+   * Returns the total number of fibers that have been stolen by other worker
+   * threads from this local queue during the lifetime of the queue.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the total number of fibers that have been stolen by other worker
+   *         threads
+   */
+  def getStolenFiberCount: Long = {
+    head.get()
+    stolenFiberCount
+  }
+
+  /**
+   * Exposes the "real" value of the head of the local queue. This value
+   * represents the state of the head which is valid for the owning worker
+   * thread. This is an unsigned 16 bit integer.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the "real" value of the head of the local queue
+   */
+  def getRealHeadTag: Int = {
+    val hd = head.get()
+    lsb(hd)
+  }
+
+  /**
+   * Exposes the "steal" tag of the head of the local queue. This value
+   * represents the state of the head which is valid for any worker thread
+   * looking to steal work from this local queue. This is an unsigned 16 bit
+   * integer.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the "steal" tag of the head of the local queue
+   */
+  def getStealHeadTag: Int = {
+    val hd = head.get()
+    msb(hd)
+  }
+
+  /**
+   * Exposes the "tail" tag of the tail of the local queue. This value
+   * represents the state of the head which is valid for the owning worker
+   * thread, used for enqueuing fibers into the local queue, as well as any
+   * other worker thread looking to steal work from this local queue, used for
+   * calculating how many fibers to steal. This is an unsigned 16 bit integer.
+   *
+   * @note This method is a part of the
+   *       [[cats.effect.unsafe.metrics.LocalQueueSamplerMBean]] interface.
+   *
+   * @return the "tail" tag of the tail of the local queue
+   */
+  def getTailTag: Int =
+    tailPublisher.get()
 }

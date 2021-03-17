@@ -19,10 +19,10 @@ package metrics
 
 /**
  * An implementation of the [[ComputePoolSamplerMBean]] interface which
- * simply delegates to the appropriate methods of the backing
- * [[cats.effect.unsafe.WorkStealingThreadPool]].
+ * simply delegates to the corresponding methods of the
+ * [[cats.effect.unsafe.WorkStealingThreadPool]] being monitored.
  *
- * @param threadPool the backing work stealing thread pool
+ * @param threadPool the monitored work stealing thread pool
  */
 class ComputePoolSampler(threadPool: WorkStealingThreadPool) extends ComputePoolSamplerMBean {
   def getWorkerThreadCount: Int = threadPool.getWorkerThreadCount
