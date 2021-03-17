@@ -20,7 +20,7 @@ package metrics
 /**
  * An implementation of the [[LocalQueueSamplerMBean]] interface which
  * simply delegates to the corresponding methods of the
- * [[cats.effect.unsafe.LocalQueue]] being monitored.
+ * `cats.effect.unsafe.LocalQueue` being monitored.
  *
  * @param queue the monitored local queue
  */

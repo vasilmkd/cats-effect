@@ -20,7 +20,7 @@ package metrics
 /**
  * An implementation of the [[ComputePoolSamplerMBean]] interface which
  * simply delegates to the corresponding methods of the
- * [[cats.effect.unsafe.WorkStealingThreadPool]] being monitored.
+ * `cats.effect.unsafe.WorkStealingThreadPool` being monitored.
  *
  * @param threadPool the monitored work stealing thread pool
  */
