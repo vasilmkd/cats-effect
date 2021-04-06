@@ -6,8 +6,8 @@ import cats.syntax.all._
 
 private[std] final class CircularBuffer[F[_], A](
     capacity: Int,
-    buffer: Array[Ref[F, Option[A]]],
-    sequenceBuffer: Array[Ref[F, Long]],
+    buffer: Vector[Ref[F, Option[A]]],
+    sequenceBuffer: Vector[Ref[F, Long]],
     producerIndex: Ref[F, Long],
     consumerIndex: Ref[F, Long]
 )(implicit F: GenConcurrent[F, _]) {
@@ -93,4 +93,16 @@ private[std] final class CircularBuffer[F[_], A](
       case None => F.pure(none[A])
     }.uncancelable
   }
+}
+
+object CircularBuffer {
+  def apply[F[_], A](capacity: Int)(implicit F: GenConcurrent[F, _]): F[CircularBuffer[F, A]] =
+    F.map4(
+      (0 until capacity).toVector.traverse(_ => Ref.of[F, Option[A]](None)),
+      (0 until capacity).toVector.traverse(_ => Ref.of[F, Long](0L)),
+      Ref.of[F, Long](0L),
+      Ref.of[F, Long](0L)
+    ) { (buffer, sequenceBuffer, producerIndex, consumerIndex) =>
+      new CircularBuffer(capacity, buffer, sequenceBuffer, producerIndex, consumerIndex)
+    }
 }
