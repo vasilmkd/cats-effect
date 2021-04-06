@@ -33,9 +33,9 @@ private[std] final class CircularBuffer[F[_], A](
       producerIndex.access.flatMap {
         case (cur, update) =>
           if (pIdx == cur)
-            update(pIdx + 1).map(!_)
+            update(pIdx + 1)
           else
-            F.pure(true)
+            F.pure(false)
       }
 
     def loop(cIdx: Long): F[Option[(Int, Long)]] =
@@ -54,8 +54,8 @@ private[std] final class CircularBuffer[F[_], A](
             )
           else
             F.ifM(cond(pIdx))(
-              loop(cIdx),
-              F.pure(Some((seqOffset, pIdx)))
+              F.pure(Some((seqOffset, pIdx))),
+              loop(cIdx)
             )
         }
       }
@@ -74,9 +74,9 @@ private[std] final class CircularBuffer[F[_], A](
       consumerIndex.access.flatMap {
         case (cur, update) =>
           if (cIdx == cur)
-            update(cIdx + 1).map(!_)
+            update(cIdx + 1)
           else
-            F.pure(true)
+            F.pure(false)
       }
 
     def loop(pIdx: Long): F[Option[(Int, Long)]] =
@@ -96,8 +96,8 @@ private[std] final class CircularBuffer[F[_], A](
             )
           else
             F.ifM(cond(cIdx))(
-              loop(pIdx),
-              F.pure(Some((seqOffset, cIdx)))
+              F.pure(Some((seqOffset, cIdx))),
+              loop(pIdx)
             )
         }
       }
