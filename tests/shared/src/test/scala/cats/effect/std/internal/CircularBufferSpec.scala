@@ -17,6 +17,8 @@
 package cats.effect
 package std.internal
 
+import cats.syntax.traverse._
+
 class CircularBufferSpec extends BaseSpec {
 
   "circular buffer" should {
@@ -51,7 +53,7 @@ class CircularBufferSpec extends BaseSpec {
 
     "offer race and poll race" in real {
       val test = for {
-        buf <- CircularBuffer[IO, Int](2)
+        buf <- CircularBuffer[IO, Int](3)
         t1 <- buf.offer(1).both(buf.offer(2))
         (of1, of2) = t1
         t2 <- buf.offer(3).both(buf.offer(4))
@@ -62,13 +64,22 @@ class CircularBufferSpec extends BaseSpec {
         (pl3, pl4) = t4
       } yield (List(of1, of2, of3, of4), List(pl1, pl2, pl3, pl4))
 
-      test.flatMap {
-        case (offers, polls) =>
-          IO {
-            offers mustEqual List(true, true, false, false)
-            (polls mustEqual List(Some(1), Some(2), None, None)) or
-              (polls mustEqual List(Some(2), Some(1), None, None))
-          }
+      (0 until 100).toList.traverse { _ =>
+        test.flatMap {
+          case (offers, polls) =>
+            IO {
+              (offers mustEqual List(true, true, true, false)) or
+                (offers mustEqual List(true, true, false, true))
+              (polls mustEqual List(Some(1), Some(2), Some(3), None)) or
+                (polls mustEqual List(Some(2), Some(1), Some(3), None)) or
+                (polls mustEqual List(Some(1), Some(2), Some(4), None)) or
+                (polls mustEqual List(Some(2), Some(1), Some(4), None)) or
+                (polls mustEqual List(Some(1), Some(2), None, Some(3))) or
+                (polls mustEqual List(Some(2), Some(1), None, Some(3))) or
+                (polls mustEqual List(Some(1), Some(2), None, Some(4))) or
+                (polls mustEqual List(Some(2), Some(1), None, Some(4)))
+            }
+        }
       }
     }
   }

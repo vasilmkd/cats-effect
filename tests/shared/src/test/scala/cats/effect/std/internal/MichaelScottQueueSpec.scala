@@ -17,6 +17,8 @@
 package cats.effect
 package std.internal
 
+import cats.syntax.traverse._
+
 class MichaelScottQueueSpec extends BaseSpec {
 
   "Michael Scott queue" should {
@@ -68,12 +70,14 @@ class MichaelScottQueueSpec extends BaseSpec {
         (pl3, pl4) = t2
       } yield List(pl1, pl2, pl3, pl4)
 
-      test.flatMap { polls =>
-        IO {
-          (polls mustEqual List(Some(1), Some(2), Some(3), Some(4))) or
-            (polls mustEqual List(Some(2), Some(1), Some(3), Some(4))) or
-            (polls mustEqual List(Some(1), Some(2), Some(4), Some(3))) or
-            (polls mustEqual List(Some(2), Some(1), Some(4), Some(3)))
+      (0 until 100).toList.traverse { _ =>
+        test.flatMap { polls =>
+          IO {
+            (polls mustEqual List(Some(1), Some(2), Some(3), Some(4))) or
+              (polls mustEqual List(Some(2), Some(1), Some(3), Some(4))) or
+              (polls mustEqual List(Some(1), Some(2), Some(4), Some(3))) or
+              (polls mustEqual List(Some(2), Some(1), Some(4), Some(3)))
+          }
         }
       }
     }
