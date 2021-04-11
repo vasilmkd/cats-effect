@@ -111,13 +111,13 @@ private[std] final class CircularBuffer[F[_], A](
   }
 }
 
-object CircularBuffer {
+private object CircularBuffer {
   def apply[F[_], A](capacity: Int)(implicit F: GenConcurrent[F, _]): F[CircularBuffer[F, A]] =
     F.map4(
       (0 until capacity).toVector.traverse(_ => Ref.of[F, Option[A]](None)),
       (0 until capacity).toVector.traverse(n => Ref.of[F, Long](n.toLong)),
-      Ref.of[F, Long](0L),
-      Ref.of[F, Long](0L)
+      F.ref(0L),
+      F.ref(0L)
     ) { (buffer, sequenceBuffer, producerIndex, consumerIndex) =>
       new CircularBuffer(capacity, buffer, sequenceBuffer, producerIndex, consumerIndex)
     }
