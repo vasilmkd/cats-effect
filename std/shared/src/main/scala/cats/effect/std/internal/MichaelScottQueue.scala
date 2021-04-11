@@ -31,35 +31,36 @@ private[std] final class MichaelScottQueue[F[_], A](
       val node = Node(a, next)
 
       def loop: F[Unit] =
-        tail.get.flatMap { oldTl =>
-          oldTl.next.get.flatMap { next =>
+        tail.get.flatMap { currentTl =>
+          currentTl.next.get.flatMap { next =>
             tail.get.flatMap { tl =>
-              if (oldTl eq tl) {
+              if (currentTl eq tl) {
                 next match {
-                  case None =>
-                    oldTl.next.access.flatMap {
+                  case Some(next) =>
+                    tail.access.flatMap {
                       case (cur, update) =>
-                        if (cur eq next)
-                          F.ifM(update(Some(node)))(
-                            tail.access.flatMap {
-                              case (cur, update) =>
-                                if (cur eq oldTl)
-                                  update(node).void
-                                else
-                                  loop
-                            },
-                            loop
-                          )
+                        if (cur eq currentTl)
+                          update(next) >> loop
                         else
                           loop
                     }
-                  case Some(nextNode) =>
-                    tail.access.flatMap {
+                  case None =>
+                    currentTl.next.access.flatMap {
                       case (cur, update) =>
-                        if (cur eq nextNode)
-                          update(oldTl) *> loop
-                        else
+                        if (cur eq None) {
+                          F.ifM(update(Some(node)))(
+                            tail.access.flatMap {
+                              case (cur, update) =>
+                                if (cur eq currentTl)
+                                  update(node).void
+                                else
+                                  F.unit
+                            },
+                            loop
+                          )
+                        } else {
                           loop
+                        }
                     }
                 }
               } else {
@@ -72,52 +73,44 @@ private[std] final class MichaelScottQueue[F[_], A](
       loop
     }
 
-  def poll: F[Option[A]] = {
-    def loop: F[Option[A]] =
-      head.get.flatMap { oldHd =>
-        tail.get.flatMap { oldTl =>
-          oldHd.next.get.flatMap { next =>
-            head.get.flatMap { hd =>
-              if (hd eq oldHd) {
-                if (oldHd eq oldTl) {
-                  next match {
-                    case None => F.pure(None)
-                    case Some(next) =>
-                      tail.access.flatMap {
-                        case (cur, update) =>
-                          if (cur eq oldTl)
-                            update(next) *> loop
-                          else
-                            loop
-                      }
-                  }
-                } else {
-                  next match {
-                    case None => loop
-                    case Some(node) =>
-                      val a = node.value
-                      head.access.flatMap {
-                        case (cur, update) =>
-                          if (cur eq oldHd)
-                            F.ifM(update(node))(
-                              F.pure(Some(a)),
-                              loop
-                            )
-                          else
-                            loop
-                      }
-                  }
+  def poll: F[Option[A]] =
+    head.get.flatMap { currentHd =>
+      tail.get.flatMap { currentTl =>
+        currentHd.next.get.flatMap { next =>
+          head.get.flatMap { hd =>
+            if (currentHd eq hd) {
+              if (currentHd eq currentTl) {
+                next match {
+                  case Some(next) =>
+                    tail.access.flatMap {
+                      case (cur, update) =>
+                        if (cur eq currentTl)
+                          update(next) >> poll
+                        else
+                          poll
+                    }
+                  case None =>
+                    F.pure(None)
                 }
               } else {
-                loop
+                head.access.flatMap {
+                  case (cur, update) =>
+                    if (cur eq currentHd)
+                      F.ifM(update(next.get))(
+                        F.pure(Some(next.get.value)),
+                        poll
+                      )
+                    else
+                      poll
+                }
               }
+            } else {
+              poll
             }
           }
         }
       }
-
-    loop
-  }
+    }
 }
 
 private object MichaelScottQueue {
