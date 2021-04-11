@@ -81,5 +81,19 @@ class MichaelScottQueueSpec extends BaseSpec {
         }
       }
     }
+
+    "race offer and take" in real {
+      val test = for {
+        ms <- MichaelScottQueue[IO, Int]
+        t <- ms.offer(1).both(ms.poll)
+      } yield t._2
+
+      (0 until 100).toList.traverse { _ =>
+        test.flatMap {
+          case Some(a) => IO(a mustEqual 1)
+          case None => IO(ok)
+        }
+      }
+    }
   }
 }

@@ -82,5 +82,22 @@ class CircularBufferSpec extends BaseSpec {
         }
       }
     }
+
+    "race offer and take" in real {
+      val test = for {
+        buf <- CircularBuffer[IO, Int](1)
+        t <- buf.offer(1).both(buf.poll)
+      } yield t
+
+      (0 until 100).toList.traverse { _ =>
+        test.flatMap {
+          case (of, pl) =>
+            IO {
+              (of mustEqual true) and
+                ((pl mustEqual None) or (pl mustEqual Some(1)))
+            }
+        }
+      }
+    }
   }
 }
