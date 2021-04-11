@@ -1,3 +1,19 @@
+/*
+ * Copyright 2020-2021 Typelevel
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package cats.effect.std.internal
 
 import cats.effect.kernel.{GenConcurrent, Ref}
@@ -6,8 +22,8 @@ import cats.syntax.all._
 import MichaelScottQueue.Node
 
 private[std] final class MichaelScottQueue[F[_], A](
-  head: Ref[F, Node[F, A]],
-  tail: Ref[F, Node[F, A]]
+    head: Ref[F, Node[F, A]],
+    tail: Ref[F, Node[F, A]]
 )(implicit F: GenConcurrent[F, _]) {
 
   def offer(a: A): F[Unit] =
@@ -21,26 +37,29 @@ private[std] final class MichaelScottQueue[F[_], A](
               if (oldTl eq tl) {
                 next match {
                   case None =>
-                    oldTl.next.access.flatMap { case (cur, update) =>
-                      if (cur eq next)
-                        F.ifM(update(Some(node)))(
-                          tail.access.flatMap { case (cur, update) =>
-                            if (cur eq oldTl)
-                              update(node).void
-                            else
-                              loop
-                          },
+                    oldTl.next.access.flatMap {
+                      case (cur, update) =>
+                        if (cur eq next)
+                          F.ifM(update(Some(node)))(
+                            tail.access.flatMap {
+                              case (cur, update) =>
+                                if (cur eq oldTl)
+                                  update(node).void
+                                else
+                                  loop
+                            },
+                            loop
+                          )
+                        else
                           loop
-                        )
-                      else
-                        loop
                     }
                   case Some(nextNode) =>
-                    tail.access.flatMap { case (cur, update) =>
-                      if (cur eq nextNode)
-                        update(oldTl) *> loop
-                      else
-                        loop
+                    tail.access.flatMap {
+                      case (cur, update) =>
+                        if (cur eq nextNode)
+                          update(oldTl) *> loop
+                        else
+                          loop
                     }
                 }
               } else {
@@ -64,26 +83,28 @@ private[std] final class MichaelScottQueue[F[_], A](
                   next match {
                     case None => F.pure(None)
                     case Some(next) =>
-                      tail.access.flatMap { case (cur, update) =>
-                      if (cur eq oldTl)
-                        update(next) *> loop
-                      else
-                        loop
-                    }
-                  }           
+                      tail.access.flatMap {
+                        case (cur, update) =>
+                          if (cur eq oldTl)
+                            update(next) *> loop
+                          else
+                            loop
+                      }
+                  }
                 } else {
                   next match {
                     case None => loop
                     case Some(node) =>
                       val a = node.value
-                      head.access.flatMap { case (cur, update) =>
-                        if (cur eq oldHd)
-                          F.ifM(update(node))(
-                            F.pure(Some(a)),
+                      head.access.flatMap {
+                        case (cur, update) =>
+                          if (cur eq oldHd)
+                            F.ifM(update(node))(
+                              F.pure(Some(a)),
+                              loop
+                            )
+                          else
                             loop
-                          )
-                        else
-                          loop
                       }
                   }
                 }
@@ -101,8 +122,8 @@ private[std] final class MichaelScottQueue[F[_], A](
 
 private object MichaelScottQueue {
   final case class Node[F[_], A](
-    value: A,
-    next: Ref[F, Option[Node[F, A]]]
+      value: A,
+      next: Ref[F, Option[Node[F, A]]]
   )
 
   def apply[F[_], A](implicit F: GenConcurrent[F, _]): F[MichaelScottQueue[F, A]] =
@@ -111,8 +132,6 @@ private object MichaelScottQueue {
       F.map2(
         F.ref(dummy),
         F.ref(dummy)
-      ) { (head, tail) =>
-        new MichaelScottQueue(head, tail)
-      }
+      ) { (head, tail) => new MichaelScottQueue(head, tail) }
     }
 }
