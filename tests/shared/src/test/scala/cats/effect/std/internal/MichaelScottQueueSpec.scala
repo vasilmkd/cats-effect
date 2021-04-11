@@ -22,23 +22,23 @@ class MichaelScottQueueSpec extends BaseSpec {
   "Michael Scott queue" should {
     "offer and poll" in real {
       val test = for {
-        queue <- MichaelScottQueue[IO, Int]
-        _ <- queue.offer(1)
-        pl1 <- queue.poll
-        pl2 <- queue.poll
-        _ <- queue.offer(2)
-        _ <- queue.offer(3)
-        pl3 <- queue.poll
-        _ <- queue.offer(4)
-        _ <- queue.offer(5)
-        _ <- queue.offer(6)
-        pl4 <- queue.poll
-        pl5 <- queue.poll
-        pl6 <- queue.poll
-        pl7 <- queue.poll
-        pl8 <- queue.poll
-        _ <- queue.offer(7)
-        pl9 <- queue.poll
+        ms <- MichaelScottQueue[IO, Int]
+        _ <- ms.offer(1)
+        pl1 <- ms.poll
+        pl2 <- ms.poll
+        _ <- ms.offer(2)
+        _ <- ms.offer(3)
+        pl3 <- ms.poll
+        _ <- ms.offer(4)
+        _ <- ms.offer(5)
+        _ <- ms.offer(6)
+        pl4 <- ms.poll
+        pl5 <- ms.poll
+        pl6 <- ms.poll
+        pl7 <- ms.poll
+        pl8 <- ms.poll
+        _ <- ms.offer(7)
+        pl9 <- ms.poll
       } yield List(pl1, pl2, pl3, pl4, pl5, pl6, pl7, pl8, pl9)
 
       test.flatMap { polls =>
@@ -53,6 +53,27 @@ class MichaelScottQueueSpec extends BaseSpec {
             Some(6),
             None,
             Some(7))
+        }
+      }
+    }
+
+    "offer race and poll race" in real {
+      val test = for {
+        ms <- MichaelScottQueue[IO, Int]
+        _ <- ms.offer(1).both(ms.offer(2))
+        _ <- ms.offer(3).both(ms.offer(4))
+        t1 <- ms.poll.both(ms.poll)
+        (pl1, pl2) = t1
+        t2 <- ms.poll.both(ms.poll)
+        (pl3, pl4) = t2
+      } yield List(pl1, pl2, pl3, pl4)
+
+      test.flatMap { polls =>
+        IO {
+          (polls mustEqual List(Some(1), Some(2), Some(3), Some(4))) or
+            (polls mustEqual List(Some(2), Some(1), Some(3), Some(4))) or
+            (polls mustEqual List(Some(1), Some(2), Some(4), Some(3))) or
+            (polls mustEqual List(Some(2), Some(1), Some(4), Some(3)))
         }
       }
     }
