@@ -17,6 +17,7 @@
 package cats.effect.std.internal
 
 import cats.effect.kernel.{GenConcurrent, Ref}
+import cats.effect.kernel.syntax.monadCancel._
 import cats.syntax.all._
 
 import MichaelScottQueue.Node
@@ -27,90 +28,96 @@ private[std] final class MichaelScottQueue[F[_], A](
 )(implicit F: GenConcurrent[F, _]) {
 
   def offer(a: A): F[Unit] =
-    F.ref[Option[Node[F, A]]](None).flatMap { next =>
-      val node = Node(a, next)
+    F.ref[Option[Node[F, A]]](None)
+      .flatMap { next =>
+        val node = Node(a, next)
 
-      def loop: F[Unit] =
-        tail.get.flatMap { currentTl =>
-          currentTl.next.get.flatMap { next =>
-            tail.get.flatMap { tl =>
-              if (currentTl eq tl) {
-                next match {
-                  case Some(next) =>
-                    tail.access.flatMap {
-                      case (cur, update) =>
-                        if (cur eq currentTl)
-                          update(next) >> loop
-                        else
-                          loop
-                    }
-                  case None =>
-                    currentTl.next.access.flatMap {
-                      case (cur, update) =>
-                        if (cur eq None) {
-                          F.ifM(update(Some(node)))(
-                            tail.access.flatMap {
-                              case (cur, update) =>
-                                if (cur eq currentTl)
-                                  update(node).void
-                                else
-                                  F.unit
-                            },
+        def loop: F[Unit] =
+          tail.get.flatMap { currentTl =>
+            currentTl.next.get.flatMap { next =>
+              tail.get.flatMap { tl =>
+                if (currentTl eq tl) {
+                  next match {
+                    case Some(next) =>
+                      tail.access.flatMap {
+                        case (cur, update) =>
+                          if (cur eq currentTl)
+                            update(next) >> loop
+                          else
                             loop
-                          )
-                        } else {
-                          loop
-                        }
-                    }
+                      }
+                    case None =>
+                      currentTl.next.access.flatMap {
+                        case (cur, update) =>
+                          if (cur eq None) {
+                            F.ifM(update(Some(node)))(
+                              tail.access.flatMap {
+                                case (cur, update) =>
+                                  if (cur eq currentTl)
+                                    update(node).void
+                                  else
+                                    F.unit
+                              },
+                              loop
+                            )
+                          } else {
+                            loop
+                          }
+                      }
+                  }
+                } else {
+                  loop
                 }
-              } else {
-                loop
               }
             }
           }
-        }
 
-      loop
-    }
+        loop
+      }
+      .uncancelable
 
-  def poll: F[Option[A]] =
-    head.get.flatMap { currentHd =>
-      tail.get.flatMap { currentTl =>
-        currentHd.next.get.flatMap { next =>
-          head.get.flatMap { hd =>
-            if (currentHd eq hd) {
-              if (currentHd eq currentTl) {
-                next match {
-                  case Some(next) =>
-                    tail.access.flatMap {
-                      case (cur, update) =>
-                        if (cur eq currentTl)
-                          update(next) >> poll
-                        else
+  def poll: F[Option[A]] = {
+    def loop: F[Option[A]] =
+      head.get.flatMap { currentHd =>
+        tail.get.flatMap { currentTl =>
+          currentHd.next.get.flatMap { next =>
+            head.get.flatMap { hd =>
+              if (currentHd eq hd) {
+                if (currentHd eq currentTl) {
+                  next match {
+                    case Some(next) =>
+                      tail.access.flatMap {
+                        case (cur, update) =>
+                          if (cur eq currentTl)
+                            update(next) >> poll
+                          else
+                            poll
+                      }
+                    case None =>
+                      F.pure(None)
+                  }
+                } else {
+                  head.access.flatMap {
+                    case (cur, update) =>
+                      if (cur eq currentHd)
+                        F.ifM(update(next.get))(
+                          F.pure(Some(next.get.value)),
                           poll
-                    }
-                  case None =>
-                    F.pure(None)
+                        )
+                      else
+                        poll
+                  }
                 }
               } else {
-                head.access.flatMap {
-                  case (cur, update) =>
-                    if (cur eq currentHd)
-                      F.ifM(update(next.get))(
-                        F.pure(Some(next.get.value)),
-                        poll
-                      )
-                    else
-                      poll
-                }
+                poll
               }
-            } else {
-              poll
             }
           }
         }
       }
-    }
+
+    loop.uncancelable
+  }
 }
 
 private object MichaelScottQueue {

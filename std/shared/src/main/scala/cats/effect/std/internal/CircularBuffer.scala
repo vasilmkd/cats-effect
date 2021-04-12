@@ -17,92 +17,122 @@
 package cats.effect.std.internal
 
 import cats.effect.kernel.{GenConcurrent, Ref}
+import cats.effect.kernel.syntax.monadCancel._
 import cats.syntax.all._
 
-private[std] final class CircularBuffer[F[_], A](
-    capacity: Int,
-    buffer: Vector[Ref[F, Option[A]]],
-    sequenceBuffer: Vector[Ref[F, Long]],
-    producerIndex: Ref[F, Long],
-    consumerIndex: Ref[F, Long]
-)(implicit F: GenConcurrent[F, _]) {
-
-  def offer(a: A): F[Boolean] = {
-    def cond(pIdx: Long): F[Boolean] =
-      producerIndex.access.flatMap {
-        case (cur, update) =>
-          if (cur == pIdx)
-            update(pIdx + 1)
-          else
-            F.pure(false)
-      }
-
-    def loop: F[Boolean] =
-      producerIndex.get.flatMap { pIdx =>
-        val seqOffset = (pIdx % capacity).toInt
-        sequenceBuffer(seqOffset).get.flatMap { seq =>
-          if (seq < pIdx)
-            consumerIndex.get.flatMap { cIdx =>
-              if (pIdx - capacity >= cIdx)
-                F.pure(false)
-              else
-                loop
-            }
-          else
-            F.ifM(cond(pIdx))(
-              buffer(seqOffset)
-                .set(Some(a)) *> sequenceBuffer(seqOffset).set(pIdx + 1).as(true),
-              loop
-            )
-        }
-      }
-
-    loop
-  }
-
-  def poll: F[Option[A]] = {
-    def cond(cIdx: Long): F[Boolean] =
-      consumerIndex.access.flatMap {
-        case (cur, update) =>
-          if (cur == cIdx)
-            update(cIdx + 1)
-          else
-            F.pure(false)
-      }
-
-    def loop: F[Option[A]] =
-      consumerIndex.get.flatMap { cIdx =>
-        val seqOffset = (cIdx % capacity).toInt
-        val expectedSeq = cIdx + 1
-        sequenceBuffer(seqOffset).get.flatMap { seq =>
-          if (seq < expectedSeq)
-            producerIndex.get.flatMap { pIdx =>
-              if (cIdx == pIdx)
-                F.pure(None)
-              else
-                loop
-            }
-          else
-            F.ifM(cond(cIdx))(
-              buffer(seqOffset).getAndSet(None) <* sequenceBuffer(seqOffset).set(
-                cIdx + capacity),
-              loop
-            )
-        }
-      }
-
-    loop
-  }
+private[std] trait CircularBuffer[F[_], A] {
+  def offer(a: A): F[Boolean]
+  def poll: F[Option[A]]
 }
 
-private object CircularBuffer {
+private[std] object CircularBuffer {
   def apply[F[_], A](capacity: Int)(implicit F: GenConcurrent[F, _]): F[CircularBuffer[F, A]] =
-    F.map4(
-      (0 until capacity).toVector.traverse(_ => Ref.of[F, Option[A]](None)),
-      (0 until capacity).toVector.traverse(n => Ref.of[F, Long](n.toLong)),
-      F.ref(0L),
-      F.ref(0L)
-    ) { (buffer, sequenceBuffer, producerIndex, consumerIndex) =>
-      new CircularBuffer(capacity, buffer, sequenceBuffer, producerIndex, consumerIndex)
+    if (capacity == 1) {
+      F.ref[Option[A]](None).map(new SingleSlotCircularBuffer(_))
+    } else {
+      F.map4(
+        (0 until capacity).toVector.traverse(_ => Ref.of[F, Option[A]](None)),
+        (0 until capacity).toVector.traverse(n => Ref.of[F, Long](n.toLong)),
+        F.ref(0L),
+        F.ref(0L)
+      ) { (buffer, sequenceBuffer, producerIndex, consumerIndex) =>
+        new VectorBackedCircularBuffer(
+          capacity,
+          buffer,
+          sequenceBuffer,
+          producerIndex,
+          consumerIndex)
+      }
     }
+
+  private final class VectorBackedCircularBuffer[F[_], A](
+      capacity: Int,
+      buffer: Vector[Ref[F, Option[A]]],
+      sequenceBuffer: Vector[Ref[F, Long]],
+      producerIndex: Ref[F, Long],
+      consumerIndex: Ref[F, Long]
+  )(implicit F: GenConcurrent[F, _])
+      extends CircularBuffer[F, A] {
+
+    def offer(a: A): F[Boolean] = {
+      def cond(pIdx: Long): F[Boolean] =
+        producerIndex.access.flatMap {
+          case (cur, update) =>
+            if (cur == pIdx)
+              update(pIdx + 1)
+            else
+              F.pure(false)
+        }
+
+      def loop: F[Boolean] =
+        producerIndex.get.flatMap { pIdx =>
+          val seqOffset = (pIdx % capacity).toInt
+          sequenceBuffer(seqOffset).get.flatMap { seq =>
+            if (seq < pIdx)
+              consumerIndex.get.flatMap { cIdx =>
+                if (pIdx - capacity >= cIdx)
+                  F.pure(false)
+                else
+                  loop
+              }
+            else
+              F.ifM(cond(pIdx))(
+                buffer(seqOffset)
+                  .set(Some(a)) *> sequenceBuffer(seqOffset).set(pIdx + 1).as(true),
+                loop
+              )
+          }
+        }
+
+      loop.uncancelable
+    }
+
+    def poll: F[Option[A]] = {
+      def cond(cIdx: Long): F[Boolean] =
+        consumerIndex.access.flatMap {
+          case (cur, update) =>
+            if (cur == cIdx)
+              update(cIdx + 1)
+            else
+              F.pure(false)
+        }
+
+      def loop: F[Option[A]] =
+        consumerIndex.get.flatMap { cIdx =>
+          val seqOffset = (cIdx % capacity).toInt
+          val expectedSeq = cIdx + 1
+          sequenceBuffer(seqOffset).get.flatMap { seq =>
+            if (seq < expectedSeq)
+              producerIndex.get.flatMap { pIdx =>
+                if (cIdx == pIdx)
+                  F.pure(None)
+                else
+                  loop
+              }
+            else
+              F.ifM(cond(cIdx))(
+                buffer(seqOffset).getAndSet(None) <* sequenceBuffer(seqOffset).set(
+                  cIdx + capacity),
+                loop
+              )
+          }
+        }
+
+      loop.uncancelable
+    }
+  }
+
+  private final class SingleSlotCircularBuffer[F[_], A](
+      ref: Ref[F, Option[A]]
+  )(implicit F: GenConcurrent[F, _])
+      extends CircularBuffer[F, A] {
+    def offer(a: A): F[Boolean] =
+      ref.modify {
+        case s @ Some(_) => (s, false)
+        case None => (Some(a), true)
+      }.uncancelable
+
+    def poll: F[Option[A]] =
+      ref.getAndSet(None).uncancelable
+  }
 }

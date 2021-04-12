@@ -26,85 +26,176 @@ class CircularBufferSpec extends BaseSpec {
 
   "circular buffer" should {
 
-    "offer and poll sequential" in real {
-      val test = for {
-        buf <- CircularBuffer[IO, Int](3)
-        of1 <- buf.offer(1)
-        pl1 <- buf.poll
-        of2 <- buf.offer(2)
-        of3 <- buf.offer(3)
-        pl2 <- buf.poll
-        of4 <- buf.offer(4)
-        of5 <- buf.offer(5)
-        of6 <- buf.offer(6)
-        pl3 <- buf.poll
-        pl4 <- buf.poll
-        pl5 <- buf.poll
-        pl6 <- buf.poll
-        of7 <- buf.offer(7)
-        pl7 <- buf.poll
-      } yield (List(of1, of2, of3, of4, of5, of6, of7), List(pl1, pl2, pl3, pl4, pl5, pl6, pl7))
+    "vector backed circular buffer" should {
 
-      test.flatMap {
-        case (offers, polls) =>
-          IO {
-            offers mustEqual List(true, true, true, true, true, false, true)
-            polls mustEqual List(Some(1), Some(2), Some(3), Some(4), Some(5), None, Some(7))
-          }
-      }
-    }
+      "offer and poll sequential" in real {
+        val test = for {
+          buf <- CircularBuffer[IO, Int](3)
+          of1 <- buf.offer(1)
+          pl1 <- buf.poll
+          of2 <- buf.offer(2)
+          of3 <- buf.offer(3)
+          pl2 <- buf.poll
+          of4 <- buf.offer(4)
+          of5 <- buf.offer(5)
+          of6 <- buf.offer(6)
+          pl3 <- buf.poll
+          pl4 <- buf.poll
+          pl5 <- buf.poll
+          pl6 <- buf.poll
+          of7 <- buf.offer(7)
+          pl7 <- buf.poll
+        } yield (
+          List(of1, of2, of3, of4, of5, of6, of7),
+          List(pl1, pl2, pl3, pl4, pl5, pl6, pl7))
 
-    "offer race and poll race" in real {
-      val test = for {
-        buf <- CircularBuffer[IO, Int](3)
-        t1 <- buf.offer(1).both(buf.offer(2))
-        (of1, of2) = t1
-        t2 <- buf.offer(3).both(buf.offer(4))
-        (of3, of4) = t2
-        t3 <- buf.poll.both(buf.poll)
-        (pl1, pl2) = t3
-        t4 <- buf.poll.both(buf.poll)
-        (pl3, pl4) = t4
-      } yield (List(of1, of2, of3, of4), List(pl1, pl2, pl3, pl4))
-
-      (0 until 100).toList.traverse { _ =>
         test.flatMap {
           case (offers, polls) =>
             IO {
-              (offers mustEqual List(true, true, true, false)) or
-                (offers mustEqual List(true, true, false, true))
-              (polls mustEqual List(Some(1), Some(2), Some(3), None)) or
-                (polls mustEqual List(Some(2), Some(1), Some(3), None)) or
-                (polls mustEqual List(Some(1), Some(2), Some(4), None)) or
-                (polls mustEqual List(Some(2), Some(1), Some(4), None)) or
-                (polls mustEqual List(Some(1), Some(2), None, Some(3))) or
-                (polls mustEqual List(Some(2), Some(1), None, Some(3))) or
-                (polls mustEqual List(Some(1), Some(2), None, Some(4))) or
-                (polls mustEqual List(Some(2), Some(1), None, Some(4)))
+              offers mustEqual List(true, true, true, true, true, false, true)
+              polls mustEqual List(Some(1), Some(2), Some(3), Some(4), Some(5), None, Some(7))
             }
+        }
+      }
+
+      "offer race and poll race" in real {
+        val test = for {
+          buf <- CircularBuffer[IO, Int](3)
+          t1 <- buf.offer(1).both(buf.offer(2))
+          (of1, of2) = t1
+          t2 <- buf.offer(3).both(buf.offer(4))
+          (of3, of4) = t2
+          t3 <- buf.poll.both(buf.poll)
+          (pl1, pl2) = t3
+          t4 <- buf.poll.both(buf.poll)
+          (pl3, pl4) = t4
+        } yield (List(of1, of2, of3, of4), List(pl1, pl2, pl3, pl4))
+
+        (0 until 100).toList.traverse { _ =>
+          test.flatMap {
+            case (offers, polls) =>
+              IO {
+                (offers mustEqual List(true, true, true, false)) or
+                  (offers mustEqual List(true, true, false, true))
+                (polls mustEqual List(Some(1), Some(2), Some(3), None)) or
+                  (polls mustEqual List(Some(2), Some(1), Some(3), None)) or
+                  (polls mustEqual List(Some(1), Some(2), Some(4), None)) or
+                  (polls mustEqual List(Some(2), Some(1), Some(4), None)) or
+                  (polls mustEqual List(Some(1), Some(2), None, Some(3))) or
+                  (polls mustEqual List(Some(2), Some(1), None, Some(3))) or
+                  (polls mustEqual List(Some(1), Some(2), None, Some(4))) or
+                  (polls mustEqual List(Some(2), Some(1), None, Some(4)))
+              }
+          }
+        }
+      }
+
+      "race offer and poll" in real {
+        val test = for {
+          buf <- CircularBuffer[IO, Int](2)
+          t1 <- buf.offer(1).both(buf.poll)
+          (of1, pl1) = t1
+          t2 <- buf.offer(2).both(buf.poll)
+          (of2, pl2) = t2
+          pl3 <- buf.poll
+        } yield (List(of1, of2), List(pl1, pl2, pl3))
+
+        (0 until 100).toList.traverse { _ =>
+          test.flatMap {
+            case (offers, polls) =>
+              IO {
+                (offers mustEqual List(true, true)) and
+                  ((polls mustEqual List(None, Some(1), Some(2))) or
+                    (polls mustEqual List(Some(1), Some(2), None)) or
+                    (polls mustEqual List(Some(1), None, Some(2))))
+              }
+          }
         }
       }
     }
 
-    "race offer and poll" in real {
-      val test = for {
-        buf <- CircularBuffer[IO, Int](2)
-        t1 <- buf.offer(1).both(buf.poll)
-        (of1, pl1) = t1
-        t2 <- buf.offer(2).both(buf.poll)
-        (of2, pl2) = t2
-        pl3 <- buf.poll
-      } yield (List(of1, of2), List(pl1, pl2, pl3))
+    "single slot circular buffer" should {
 
-      (0 until 100).toList.traverse { _ =>
+      "offer and poll sequential" in real {
+        val test = for {
+          buf <- CircularBuffer[IO, Int](1)
+          of1 <- buf.offer(1)
+          pl1 <- buf.poll
+          of2 <- buf.offer(2)
+          of3 <- buf.offer(3)
+          pl2 <- buf.poll
+          of4 <- buf.offer(4)
+          of5 <- buf.offer(5)
+          of6 <- buf.offer(6)
+          pl3 <- buf.poll
+          pl4 <- buf.poll
+          pl5 <- buf.poll
+          pl6 <- buf.poll
+          of7 <- buf.offer(7)
+          pl7 <- buf.poll
+        } yield (
+          List(of1, of2, of3, of4, of5, of6, of7),
+          List(pl1, pl2, pl3, pl4, pl5, pl6, pl7))
+
         test.flatMap {
           case (offers, polls) =>
             IO {
-              (offers mustEqual List(true, true)) and
-                ((polls mustEqual List(None, Some(1), Some(2))) or
-                  (polls mustEqual List(Some(1), Some(2), None)) or
-                  (polls mustEqual List(Some(1), None, Some(2))))
+              offers mustEqual List(true, true, false, true, false, false, true)
+              polls mustEqual List(Some(1), Some(2), Some(4), None, None, None, Some(7))
             }
+        }
+      }
+
+      "offer race and poll race" in real {
+        val test = for {
+          buf <- CircularBuffer[IO, Int](1)
+          t1 <- buf.offer(1).both(buf.offer(2))
+          (of1, of2) = t1
+          t2 <- buf.offer(3).both(buf.offer(4))
+          (of3, of4) = t2
+          t3 <- buf.poll.both(buf.poll)
+          (pl1, pl2) = t3
+          t4 <- buf.poll.both(buf.poll)
+          (pl3, pl4) = t4
+        } yield (List(of1, of2, of3, of4), List(pl1, pl2, pl3, pl4))
+
+        (0 until 100).toList.traverse { _ =>
+          test.flatMap {
+            case (offers, polls) =>
+              IO {
+                (offers mustEqual List(true, false, false, false)) or
+                  (offers mustEqual List(false, true, false, false))
+                (polls mustEqual List(Some(1), None, None, None)) or
+                  (polls mustEqual List(Some(2), None, None, None)) or
+                  (polls mustEqual List(None, Some(1), None, None)) or
+                  (polls mustEqual List(None, Some(2), None, None))
+              }
+          }
+        }
+      }
+
+      "race offer and poll" in real {
+        val test = for {
+          buf <- CircularBuffer[IO, Int](1)
+          t1 <- buf.offer(1).both(buf.poll)
+          (of1, pl1) = t1
+          t2 <- buf.offer(2).both(buf.poll)
+          (of2, pl2) = t2
+          pl3 <- buf.poll
+        } yield (List(of1, of2), List(pl1, pl2, pl3))
+
+        (0 until 100).toList.traverse { _ =>
+          test.flatMap {
+            case (offers, polls) =>
+              IO {
+                ((offers mustEqual List(true, false)) or
+                  (offers mustEqual List(true, true))) and
+                  ((polls mustEqual List(None, Some(1), None)) or
+                    (polls mustEqual List(Some(1), Some(2), None)) or
+                    (polls mustEqual List(Some(1), None, Some(2))) or
+                    (polls mustEqual List(None, Some(1), Some(2))))
+              }
+          }
         }
       }
     }
