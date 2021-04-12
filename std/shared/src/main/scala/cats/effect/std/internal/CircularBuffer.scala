@@ -17,7 +17,6 @@
 package cats.effect.std.internal
 
 import cats.effect.kernel.{GenConcurrent, Ref}
-import cats.effect.kernel.syntax.all._
 import cats.syntax.all._
 
 private[std] final class CircularBuffer[F[_], A](
@@ -32,82 +31,67 @@ private[std] final class CircularBuffer[F[_], A](
     def cond(pIdx: Long): F[Boolean] =
       producerIndex.access.flatMap {
         case (cur, update) =>
-          if (pIdx == cur)
+          if (cur == pIdx)
             update(pIdx + 1)
           else
             F.pure(false)
       }
 
-    def loop(cIdx: Long): F[Option[(Int, Long)]] =
+    def loop: F[Boolean] =
       producerIndex.get.flatMap { pIdx =>
         val seqOffset = (pIdx % capacity).toInt
         sequenceBuffer(seqOffset).get.flatMap { seq =>
           if (seq < pIdx)
-            F.ifM(F.pure(pIdx - capacity >= cIdx))(
-              consumerIndex.get.flatMap { newcIdx =>
-                if (pIdx - capacity >= newcIdx)
-                  F.pure(None)
-                else
-                  loop(newcIdx)
-              },
-              loop(cIdx)
-            )
+            consumerIndex.get.flatMap { cIdx =>
+              if (pIdx - capacity >= cIdx)
+                F.pure(false)
+              else
+                loop
+            }
           else
             F.ifM(cond(pIdx))(
-              F.pure(Some((seqOffset, pIdx))),
-              loop(cIdx)
+              buffer(seqOffset)
+                .set(Some(a)) *> sequenceBuffer(seqOffset).set(pIdx + 1).as(true),
+              loop
             )
         }
       }
 
-    loop(Long.MinValue).flatMap {
-      case Some((seqOffset, pIdx)) =>
-        val idx = (pIdx % capacity).toInt
-        buffer(idx).set(Some(a)) *> sequenceBuffer(seqOffset).set(pIdx + 1).as(true)
-      case None =>
-        F.pure(false)
-    }.uncancelable
+    loop
   }
 
   def poll: F[Option[A]] = {
     def cond(cIdx: Long): F[Boolean] =
       consumerIndex.access.flatMap {
         case (cur, update) =>
-          if (cIdx == cur)
+          if (cur == cIdx)
             update(cIdx + 1)
           else
             F.pure(false)
       }
 
-    def loop(pIdx: Long): F[Option[(Int, Long)]] =
+    def loop: F[Option[A]] =
       consumerIndex.get.flatMap { cIdx =>
         val seqOffset = (cIdx % capacity).toInt
         val expectedSeq = cIdx + 1
         sequenceBuffer(seqOffset).get.flatMap { seq =>
           if (seq < expectedSeq)
-            F.ifM(F.pure(cIdx >= pIdx))(
-              producerIndex.get.flatMap { newpIdx =>
-                if (cIdx == newpIdx)
-                  F.pure(None)
-                else
-                  loop(newpIdx)
-              },
-              loop(pIdx)
-            )
+            producerIndex.get.flatMap { pIdx =>
+              if (cIdx == pIdx)
+                F.pure(None)
+              else
+                loop
+            }
           else
             F.ifM(cond(cIdx))(
-              F.pure(Some((seqOffset, cIdx))),
-              loop(pIdx)
+              buffer(seqOffset).getAndSet(None) <* sequenceBuffer(seqOffset).set(
+                cIdx + capacity),
+              loop
             )
         }
       }
 
-    loop(-1L).flatMap {
-      case Some((seqOffset, cIdx)) =>
-        val idx = (cIdx % capacity).toInt
-        buffer(idx).getAndSet(None) <* sequenceBuffer(seqOffset).set(cIdx + capacity)
-      case None => F.pure(none[A])
-    }.uncancelable
+    loop
   }
 }
 

@@ -18,8 +18,11 @@ package cats.effect
 package std.internal
 
 import cats.syntax.traverse._
+import scala.concurrent.duration._
 
 class CircularBufferSpec extends BaseSpec {
+
+  override def executionTimeout: FiniteDuration = 10.minutes
 
   "circular buffer" should {
 
@@ -83,18 +86,24 @@ class CircularBufferSpec extends BaseSpec {
       }
     }
 
-    "race offer and take" in real {
+    "race offer and poll" in real {
       val test = for {
-        buf <- CircularBuffer[IO, Int](1)
-        t <- buf.offer(1).both(buf.poll)
-      } yield t
+        buf <- CircularBuffer[IO, Int](2)
+        t1 <- buf.offer(1).both(buf.poll)
+        (of1, pl1) = t1
+        t2 <- buf.offer(2).both(buf.poll)
+        (of2, pl2) = t2
+        pl3 <- buf.poll
+      } yield (List(of1, of2), List(pl1, pl2, pl3))
 
       (0 until 100).toList.traverse { _ =>
         test.flatMap {
-          case (of, pl) =>
+          case (offers, polls) =>
             IO {
-              (of mustEqual true) and
-                ((pl mustEqual None) or (pl mustEqual Some(1)))
+              (offers mustEqual List(true, true)) and
+                ((polls mustEqual List(None, Some(1), Some(2))) or
+                  (polls mustEqual List(Some(1), Some(2), None)) or
+                  (polls mustEqual List(Some(1), None, Some(2))))
             }
         }
       }
