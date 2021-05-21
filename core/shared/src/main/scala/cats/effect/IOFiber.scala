@@ -117,7 +117,7 @@ private final class IOFiber[A](
   private[this] val cancelationCheckThreshold = runtime.config.cancelationCheckThreshold
   private[this] val autoYieldThreshold = runtime.config.autoYieldThreshold
 
-  override def run(): Unit = {
+  def exec(): Unit = {
     // insert a read barrier after every async boundary
     readBarrier()
     try {
@@ -160,6 +160,10 @@ private final class IOFiber[A](
 
         Thread.currentThread().interrupt()
     }
+  }
+
+  override def run(): Unit = {
+    exec()
   }
 
   var cancel: IO[Unit] = IO uncancelable { _ =>
