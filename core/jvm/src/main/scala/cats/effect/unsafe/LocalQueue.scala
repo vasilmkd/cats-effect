@@ -473,7 +473,7 @@ private final class LocalQueue {
    * @return a reference to the first fiber to be executed by the stealing
    *         [[WorkerThread]], or `null` if the stealing was unsuccessful
    */
-  def stealInto(dst: LocalQueue): IOFiber[_] = {
+  def stealInto(dst: LocalQueue, carrier: WorkerThread): IOFiber[_] = {
     // A plain, unsynchronized load of the tail of the destination queue, owned
     // by the executing thread.
     val dstTl = dst.plainLoadTail()
@@ -545,6 +545,7 @@ private final class LocalQueue {
           val fiber = buffer(srcIdx)
           buffer(srcIdx) = null
           dstBuffer(dstIdx) = fiber
+          fiber.setCarrier(carrier)
           i += 1
         }
 

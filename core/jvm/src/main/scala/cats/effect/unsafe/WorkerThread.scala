@@ -297,7 +297,7 @@ private[effect] final class WorkerThread(
 
         case 4 =>
           // Try stealing fibers from other worker threads.
-          val fiber = pool.stealFromOtherWorkerThread(index, rnd)
+          val fiber = pool.stealFromOtherWorkerThread(index, rnd, this)
           if (fiber ne null) {
             // Successful steal. Announce that the current thread is no longer
             // looking for work.
