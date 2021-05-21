@@ -933,6 +933,7 @@ private final class IOFiber[A](
 
     resumeTag = DoneR
     resumeIO = null
+    carrier = null
     suspended.set(false)
 
     /* clear out literally everything to avoid any possible memory leaks */
