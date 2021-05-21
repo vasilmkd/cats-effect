@@ -249,7 +249,7 @@ private[effect] final class WorkerThread(
             // A batch of fibers has been successfully obtained. Proceed to
             // enqueue all of the fibers on the local queue and execute the
             // first one.
-            val fiber = queue.enqueueBatch(batch)
+            val fiber = queue.enqueueBatch(batch, this)
             // Many fibers have been enqueued on the local queue. Notify other
             // worker threads.
             pool.notifyParked(rnd)
@@ -334,7 +334,7 @@ private[effect] final class WorkerThread(
             // A batch of fibers has been successfully obtained. Proceed to
             // enqueue all of the fibers on the local queue and execute the
             // first one.
-            val fiber = queue.enqueueBatch(batch)
+            val fiber = queue.enqueueBatch(batch, this)
             // Not searching for work anymore. As a bonus, if this was indeed
             // the last searching worker thread, this will wake up another
             // thread to help out with the newly acquired fibers.

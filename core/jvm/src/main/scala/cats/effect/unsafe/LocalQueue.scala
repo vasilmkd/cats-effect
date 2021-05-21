@@ -345,7 +345,7 @@ private final class LocalQueue {
    * @param batch the batch of fibers to be enqueued on this local queue
    * @return a fiber to be executed directly
    */
-  def enqueueBatch(batch: Array[IOFiber[_]]): IOFiber[_] = {
+  def enqueueBatch(batch: Array[IOFiber[_]], carrier: WorkerThread): IOFiber[_] = {
     // A plain, unsynchronized load of the tail of the local queue.
     val tl = tail
 
@@ -363,7 +363,9 @@ private final class LocalQueue {
         var i = 0
         while (i < HalfLocalQueueCapacity) {
           val idx = index(tl + i)
-          buffer(idx) = batch(i)
+          val fiber = batch(i)
+          buffer(idx) = fiber
+          fiber.setCarrier(carrier)
           i += 1
         }
 
