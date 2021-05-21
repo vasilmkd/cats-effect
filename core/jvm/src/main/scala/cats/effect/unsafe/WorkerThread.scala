@@ -131,6 +131,7 @@ private[effect] final class WorkerThread(
   override def run(): Unit = {
     random = ThreadLocalRandom.current()
     val rnd = random
+    val self = this
 
     /*
      * A counter (modulo `OverflowQueueTicks`) which represents the
@@ -249,7 +250,7 @@ private[effect] final class WorkerThread(
             // A batch of fibers has been successfully obtained. Proceed to
             // enqueue all of the fibers on the local queue and execute the
             // first one.
-            val fiber = queue.enqueueBatch(batch, this)
+            val fiber = queue.enqueueBatch(batch, self)
             // Many fibers have been enqueued on the local queue. Notify other
             // worker threads.
             pool.notifyParked(rnd)
@@ -297,7 +298,7 @@ private[effect] final class WorkerThread(
 
         case 4 =>
           // Try stealing fibers from other worker threads.
-          val fiber = pool.stealFromOtherWorkerThread(index, rnd, this)
+          val fiber = pool.stealFromOtherWorkerThread(index, rnd, self)
           if (fiber ne null) {
             // Successful steal. Announce that the current thread is no longer
             // looking for work.
@@ -334,7 +335,7 @@ private[effect] final class WorkerThread(
             // A batch of fibers has been successfully obtained. Proceed to
             // enqueue all of the fibers on the local queue and execute the
             // first one.
-            val fiber = queue.enqueueBatch(batch, this)
+            val fiber = queue.enqueueBatch(batch, self)
             // Not searching for work anymore. As a bonus, if this was indeed
             // the last searching worker thread, this will wake up another
             // thread to help out with the newly acquired fibers.
