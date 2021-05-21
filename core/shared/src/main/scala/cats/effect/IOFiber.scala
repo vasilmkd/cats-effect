@@ -1082,7 +1082,7 @@ private final class IOFiber[A](
     if (ec.isInstanceOf[WorkStealingThreadPool]) {
       ec.asInstanceOf[WorkStealingThreadPool].executeFiber(this)
     } else {
-      scheduleOnForeignEC(ec)(this)
+      continueOnForeignEC(ec, this)
     }
   }
 
@@ -1090,7 +1090,7 @@ private final class IOFiber[A](
     if (ec.isInstanceOf[WorkStealingThreadPool]) {
       ec.asInstanceOf[WorkStealingThreadPool].rescheduleFiber(this)
     } else {
-      scheduleOnForeignEC(ec)(this)
+      continueOnForeignEC(ec, this)
     }
   }
 
@@ -1098,11 +1098,11 @@ private final class IOFiber[A](
     if (ec.isInstanceOf[WorkStealingThreadPool]) {
       ec.asInstanceOf[WorkStealingThreadPool].scheduleFiber(fiber)
     } else {
-      scheduleOnForeignEC(ec)(fiber)
+      continueOnForeignEC(ec, fiber)
     }
   }
 
-  private[this] def scheduleOnForeignEC(ec: ExecutionContext)(fiber: IOFiber[_]): Unit = {
+  private[this] def continueOnForeignEC(ec: ExecutionContext, fiber: IOFiber[_]): Unit = {
     try {
       ec.execute(fiber)
     } catch {
