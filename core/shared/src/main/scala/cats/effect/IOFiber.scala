@@ -186,6 +186,7 @@ private final class IOFiber[A](
 
       /* check to see if the target fiber is suspended */
       if (resume()) {
+        inferCarrier()
         /* ...it was! was it masked? */
         if (isUnmasked()) {
           /* ...nope! take over the target fiber's runloop and run the finalizers */
@@ -584,6 +585,7 @@ private final class IOFiber[A](
               // println(s"cb loop sees suspended ${suspended.get} on fiber $name")
               /* try to take ownership of the runloop */
               if (resume()) {
+                inferCarrier()
                 // `resume()` is a volatile read of `suspended` through which
                 // `wasFinalizing` is published
                 if (finalizing == state.wasFinalizing) {
@@ -729,6 +731,7 @@ private final class IOFiber[A](
                * finalisers.
                */
               if (resume()) {
+                inferCarrier()
                 if (shouldFinalize())
                   asyncCancel(null)
                 else
@@ -1112,6 +1115,16 @@ private final class IOFiber[A](
        * swallow this exception, since it means we're being externally murdered,
        * so we should just... drop the runloop
        */
+    }
+  }
+
+  private[this] def inferCarrier(): Unit = {
+    Thread.currentThread() match {
+      case wt: WorkerThread =>
+        carrier = wt
+
+      case _: Thread =>
+        carrier = null
     }
   }
 
