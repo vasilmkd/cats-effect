@@ -564,8 +564,8 @@ private final class LocalQueue {
             n -= 1
             val newDstTl = unsignedShortAddition(dstTl, n)
             val idx = index(newDstTl)
-            val fiber = dst.bufferForwarder(idx)
-            dst.bufferForwarder(idx) = null
+            val fiber = dstBuffer(idx)
+            dstBuffer(idx) = null
 
             if (n == 0) {
               // Only 1 fiber has been stolen. No need for any memory
