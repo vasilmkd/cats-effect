@@ -1121,10 +1121,10 @@ private final class IOFiber[A](
 
   private[this] def inferCarrier(): Unit = {
     Thread.currentThread() match {
-      case wt: WorkerThread =>
+      case wt: WorkerThread if currentCtx.isInstanceOf[WorkStealingThreadPool] =>
         carrier = wt
 
-      case _: Thread =>
+      case _ =>
         carrier = null
     }
   }
