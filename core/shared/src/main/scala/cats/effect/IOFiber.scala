@@ -879,6 +879,7 @@ private final class IOFiber[A](
 
             resumeTag = EvalOnR
             resumeIO = cur.ioa
+            carrier = null
             continueOn(ec)
           }
 
