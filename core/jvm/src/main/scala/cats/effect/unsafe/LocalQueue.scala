@@ -226,7 +226,8 @@ private final class LocalQueue {
       fiber: IOFiber[_],
       batched: ScalQueue[Array[IOFiber[_]]],
       overflow: ScalQueue[IOFiber[_]],
-      random: ThreadLocalRandom): Unit = {
+      random: ThreadLocalRandom,
+      carrier: WorkerThread): Unit = {
     // A plain, unsynchronized load of the tail of the local queue.
     val tl = tail
 
@@ -249,6 +250,7 @@ private final class LocalQueue {
         val newTl = unsignedShortAddition(tl, 1)
         tailPublisher.lazySet(newTl)
         tail = newTl
+        fiber.setCarrier(carrier)
         return
       }
 

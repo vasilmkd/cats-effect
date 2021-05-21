@@ -99,7 +99,7 @@ private[effect] final class WorkerThread(
    */
   def schedule(fiber: IOFiber[_]): Unit = {
     val rnd = random
-    queue.enqueue(fiber, batched, overflow, rnd)
+    queue.enqueue(fiber, batched, overflow, rnd, this)
     pool.notifyParked(rnd)
     ()
   }
