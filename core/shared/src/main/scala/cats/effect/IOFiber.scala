@@ -164,6 +164,11 @@ private final class IOFiber[A](
     }
   }
 
+  def execWithCarrier(thread: WorkerThread): Unit = {
+    carrier = thread
+    exec()
+  }
+
   def setCarrier(thread: WorkerThread): Unit = {
     carrier = thread
   }

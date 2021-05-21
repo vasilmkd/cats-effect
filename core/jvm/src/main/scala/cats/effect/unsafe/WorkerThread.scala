@@ -237,7 +237,7 @@ private[effect] final class WorkerThread(
           val fiber = overflow.poll(rnd)
           if (fiber ne null) {
             // Run the fiber.
-            fiber.exec()
+            fiber.execWithCarrier(self)
           }
           // Transition to executing fibers from the local queue.
           state = 7
@@ -254,7 +254,8 @@ private[effect] final class WorkerThread(
             // Many fibers have been enqueued on the local queue. Notify other
             // worker threads.
             pool.notifyParked(rnd)
-            // Directly run a fiber from the batch.
+            // Directly run a fiber from the batch. The carrier thread has been
+            // set already in `enqueueBatch`.
             fiber.exec()
             // Transition to executing fibers from the local queue.
             state = 7
@@ -270,7 +271,7 @@ private[effect] final class WorkerThread(
           val fiber = overflow.poll(rnd)
           if (fiber ne null) {
             // Run the fiber.
-            fiber.exec()
+            fiber.execWithCarrier(self)
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -303,7 +304,8 @@ private[effect] final class WorkerThread(
             // Successful steal. Announce that the current thread is no longer
             // looking for work.
             pool.transitionWorkerFromSearching(rnd)
-            // Run the stolen fiber.
+            // Run the stolen fiber. The carrier thread has been set already by
+            // the stealing operation.
             fiber.exec()
             // Transition to executing fibers from the local queue.
             state = 7
@@ -340,7 +342,8 @@ private[effect] final class WorkerThread(
             // the last searching worker thread, this will wake up another
             // thread to help out with the newly acquired fibers.
             pool.transitionWorkerFromSearching(rnd)
-            // Directly run a fiber from the batch.
+            // Directly run a fiber from the batch. The carrier thread has been
+            // set already in `enqueueBatch`.
             fiber.exec()
             // Transition to executing fibers from the local queue.
             state = 7
@@ -357,7 +360,7 @@ private[effect] final class WorkerThread(
             // Announce that the current thread is no longer looking for work.
             pool.transitionWorkerFromSearching(rnd)
             // Run the fiber.
-            fiber.exec()
+            fiber.execWithCarrier(self)
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -381,7 +384,8 @@ private[effect] final class WorkerThread(
             f
           }
           if (fiber ne null) {
-            // Run the fiber.
+            // Run the fiber. All fibers in the local queue have their carrier
+            // thread reference set already.
             fiber.exec()
             // Continue executing fibers from the local queue.
             state += 1
