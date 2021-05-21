@@ -169,6 +169,7 @@ private final class IOFiber[A](
   }
 
   override def run(): Unit = {
+    carrier = null
     exec()
   }
 
