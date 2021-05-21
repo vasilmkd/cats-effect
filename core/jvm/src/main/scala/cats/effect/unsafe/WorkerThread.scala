@@ -236,7 +236,7 @@ private final class WorkerThread(
           val fiber = overflow.poll(rnd)
           if (fiber ne null) {
             // Run the fiber.
-            fiber.run()
+            fiber.exec()
           }
           // Transition to executing fibers from the local queue.
           state = 7
@@ -254,7 +254,7 @@ private final class WorkerThread(
             // worker threads.
             pool.notifyParked(rnd)
             // Directly run a fiber from the batch.
-            fiber.run()
+            fiber.exec()
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -269,7 +269,7 @@ private final class WorkerThread(
           val fiber = overflow.poll(rnd)
           if (fiber ne null) {
             // Run the fiber.
-            fiber.run()
+            fiber.exec()
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -303,7 +303,7 @@ private final class WorkerThread(
             // looking for work.
             pool.transitionWorkerFromSearching(rnd)
             // Run the stolen fiber.
-            fiber.run()
+            fiber.exec()
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -340,7 +340,7 @@ private final class WorkerThread(
             // thread to help out with the newly acquired fibers.
             pool.transitionWorkerFromSearching(rnd)
             // Directly run a fiber from the batch.
-            fiber.run()
+            fiber.exec()
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -356,7 +356,7 @@ private final class WorkerThread(
             // Announce that the current thread is no longer looking for work.
             pool.transitionWorkerFromSearching(rnd)
             // Run the fiber.
-            fiber.run()
+            fiber.exec()
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -381,7 +381,7 @@ private final class WorkerThread(
           }
           if (fiber ne null) {
             // Run the fiber.
-            fiber.run()
+            fiber.exec()
             // Continue executing fibers from the local queue.
             state += 1
           } else {
