@@ -108,6 +108,8 @@ private final class IOFiber[A](
   private[this] var resumeTag: Byte = ExecR
   private[this] var resumeIO: IO[Any] = startIO
 
+  private[this] var carrier: WorkerThread = _
+
   /* prefetch for Right(()) */
   private[this] val RightUnit = IOFiber.RightUnit
 
