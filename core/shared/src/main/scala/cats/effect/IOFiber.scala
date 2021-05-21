@@ -598,7 +598,7 @@ private final class IOFiber[A](
                         resumeTag = AsyncContinueSuccessfulR
                         objectState.push(a.asInstanceOf[AnyRef])
                     }
-                    execute(ec)(this)
+                    continueOn(ec)
                   } else {
                     /*
                      * we were canceled, but since we have won the race on `suspended`
@@ -879,7 +879,7 @@ private final class IOFiber[A](
 
             resumeTag = EvalOnR
             resumeIO = cur.ioa
-            execute(ec)(this)
+            continueOn(ec)
           }
 
         case 21 =>
@@ -1078,11 +1078,11 @@ private final class IOFiber[A](
     }
   }
 
-  private[this] def execute(ec: ExecutionContext)(fiber: IOFiber[_]): Unit = {
+  private[this] def continueOn(ec: ExecutionContext): Unit = {
     if (ec.isInstanceOf[WorkStealingThreadPool]) {
-      ec.asInstanceOf[WorkStealingThreadPool].executeFiber(fiber)
+      ec.asInstanceOf[WorkStealingThreadPool].executeFiber(this)
     } else {
-      scheduleOnForeignEC(ec)(fiber)
+      scheduleOnForeignEC(ec)(this)
     }
   }
 
@@ -1271,7 +1271,7 @@ private final class IOFiber[A](
     if (!shouldFinalize()) {
       resumeTag = AfterBlockingSuccessfulR
       objectState.push(result.asInstanceOf[AnyRef])
-      execute(ec)(this)
+      continueOn(ec)
     } else {
       asyncCancel(null)
     }
@@ -1285,7 +1285,7 @@ private final class IOFiber[A](
     if (!shouldFinalize()) {
       resumeTag = AfterBlockingFailedR
       objectState.push(t)
-      execute(ec)(this)
+      continueOn(ec)
     } else {
       asyncCancel(null)
     }
