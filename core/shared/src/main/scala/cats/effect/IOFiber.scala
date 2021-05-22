@@ -1084,8 +1084,8 @@ private final class IOFiber[A](
   }
 
   private[this] def continueOn(ec: ExecutionContext): Unit = {
-    if (ec.isInstanceOf[WorkStealingThreadPool]) {
-      ec.asInstanceOf[WorkStealingThreadPool].executeFiber(this)
+    if (carrier ne null) {
+      carrier.schedule(this)
     } else {
       continueOnForeignEC(ec, this)
     }
