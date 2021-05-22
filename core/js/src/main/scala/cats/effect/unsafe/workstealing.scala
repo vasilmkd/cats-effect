@@ -31,4 +31,7 @@ private[effect] sealed abstract class WorkStealingThreadPool private ()
   private[effect] def scheduleFiber(fiber: IOFiber[_]): Unit
 }
 
-private[effect] sealed abstract class WorkerThread private () extends Thread
+private[effect] sealed abstract class WorkerThread private () extends Thread {
+  def schedule(fiber: IOFiber[_]): Unit
+  def reschedule(fiber: IOFiber[_]): Unit
+}
