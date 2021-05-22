@@ -1084,24 +1084,27 @@ private final class IOFiber[A](
   }
 
   private[this] def continueOn(ec: ExecutionContext): Unit = {
-    if (carrier ne null) {
-      carrier.schedule(this)
+    val thread = carrier
+    if (thread ne null) {
+      thread.schedule(this)
     } else {
       continueOnForeignEC(ec, this)
     }
   }
 
   private[this] def rescheduleOn(ec: ExecutionContext): Unit = {
-    if (carrier ne null) {
-      carrier.reschedule(this)
+    val thread = carrier
+    if (thread ne null) {
+      thread.reschedule(this)
     } else {
       continueOnForeignEC(ec, this)
     }
   }
 
   private[this] def scheduleOn(ec: ExecutionContext, fiber: IOFiber[_]): Unit = {
-    if (carrier ne null) {
-      carrier.schedule(fiber)
+    val thread = carrier
+    if (thread ne null) {
+      thread.schedule(fiber)
     } else {
       continueOnForeignEC(ec, fiber)
     }
