@@ -1092,8 +1092,8 @@ private final class IOFiber[A](
   }
 
   private[this] def rescheduleOn(ec: ExecutionContext): Unit = {
-    if (ec.isInstanceOf[WorkStealingThreadPool]) {
-      ec.asInstanceOf[WorkStealingThreadPool].rescheduleFiber(this)
+    if (carrier ne null) {
+      carrier.reschedule(this)
     } else {
       continueOnForeignEC(ec, this)
     }
