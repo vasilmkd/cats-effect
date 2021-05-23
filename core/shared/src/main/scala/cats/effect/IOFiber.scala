@@ -814,7 +814,7 @@ private final class IOFiber[A](
 
           // println(s"<$name> spawning <$childName>")
 
-          scheduleOn(ec, fiber)
+          scheduleOn(ec, carrier, fiber)
 
           runLoop(succeeded(fiber, 0, carrier), nextCancelation, nextAutoCede, carrier)
 
@@ -850,8 +850,8 @@ private final class IOFiber[A](
                   fiberA.registerListener(oc => cb(Right(Left((oc, fiberB)))))
                   fiberB.registerListener(oc => cb(Right(Right((fiberA, oc)))))
 
-                  scheduleOn(ec, fiberA)
-                  scheduleOn(ec, fiberB)
+                  scheduleOn(ec, carrier, fiberA)
+                  scheduleOn(ec, carrier, fiberB)
 
                   val cancel =
                     for {
@@ -1114,9 +1114,12 @@ private final class IOFiber[A](
     }
   }
 
-  private[this] def scheduleOn(ec: ExecutionContext, fiber: IOFiber[_]): Unit = {
-    if (ec.isInstanceOf[WorkStealingThreadPool]) {
-      ec.asInstanceOf[WorkStealingThreadPool].scheduleFiber(fiber)
+  private[this] def scheduleOn(
+      ec: ExecutionContext,
+      carrier: WorkerThread,
+      fiber: IOFiber[_]): Unit = {
+    if (carrier ne null) {
+      carrier.schedule(fiber)
     } else {
       continueOnForeignEC(ec, fiber)
     }
