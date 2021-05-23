@@ -34,3 +34,5 @@ private[effect] sealed abstract class WorkerThread private () extends Thread {
   def schedule(fiber: IOFiber[_]): Unit
   def reschedule(fiber: IOFiber[_]): Unit
 }
+
+private[effect] sealed abstract class HelperThread private () extends Thread
