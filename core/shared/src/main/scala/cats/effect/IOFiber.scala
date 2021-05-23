@@ -251,7 +251,7 @@ private final class IOFiber[A](
     } else if (autoCedeIterations <= 0) {
       resumeIO = cur0
       resumeTag = AutoCedeR
-      rescheduleOn(currentCtx, carrier)
+      rescheduleOn(carrier)
     } else {
       // System.out.println(s"looping on $cur0")
       /*
@@ -796,7 +796,7 @@ private final class IOFiber[A](
         /* Cede */
         case 16 =>
           resumeTag = CedeR
-          rescheduleOn(currentCtx, carrier)
+          rescheduleOn(carrier)
 
         case 17 =>
           val cur = cur0.asInstanceOf[Start[Any]]
@@ -1106,10 +1106,11 @@ private final class IOFiber[A](
     }
   }
 
-  private[this] def rescheduleOn(ec: ExecutionContext, carrier: WorkerThread): Unit = {
+  private[this] def rescheduleOn(carrier: WorkerThread): Unit = {
     if (carrier ne null) {
       carrier.reschedule(this)
     } else {
+      val ec = currentCtx
       continueOnForeignEC(ec, this)
     }
   }
