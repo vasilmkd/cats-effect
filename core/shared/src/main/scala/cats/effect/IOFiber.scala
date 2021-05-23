@@ -677,13 +677,12 @@ private final class IOFiber[A](
               // println(s"cb loop sees suspended ${suspended.get} on fiber $name")
               /* try to take ownership of the runloop */
               if (resume()) {
-                val carrier = inferCarrier()
                 // `resume()` is a volatile read of `suspended` through which
                 // `wasFinalizing` is published
                 if (finalizing == state.wasFinalizing) {
+                  val carrier = inferCarrier()
                   if (!shouldFinalize()) {
                     /* we weren't canceled or completed, so schedule the runloop for execution */
-                    val ec = currentCtx
                     e match {
                       case Left(t) =>
                         resumeTag = AsyncContinueFailedR
@@ -692,7 +691,7 @@ private final class IOFiber[A](
                         resumeTag = AsyncContinueSuccessfulR
                         objectState.push(a.asInstanceOf[AnyRef])
                     }
-                    continueOn(ec, carrier)
+                    continueOn(carrier)
                   } else {
                     /*
                      * we were canceled, but since we have won the race on `suspended`
@@ -1215,6 +1214,15 @@ private final class IOFiber[A](
     if (carrier ne null) {
       carrier.schedule(this)
     } else {
+      continueOnForeignEC(ec, this)
+    }
+  }
+
+  private[this] def continueOn(carrier: WorkerThread): Unit = {
+    if (carrier ne null) {
+      carrier.schedule(this)
+    } else {
+      val ec = currentCtx
       continueOnForeignEC(ec, this)
     }
   }
