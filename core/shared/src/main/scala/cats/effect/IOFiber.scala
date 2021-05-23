@@ -123,14 +123,14 @@ private final class IOFiber[A](
     try {
       (resumeTag: @switch) match {
         case 0 => execR(carrier)
-        case 1 => asyncContinueSuccessfulR(carrier)
-        case 2 => asyncContinueFailedR(carrier)
+        case 1 => asyncContinueSuccessfulR(conts, carrier)
+        case 2 => asyncContinueFailedR(conts, carrier)
         case 3 => blockingR()
-        case 4 => afterBlockingSuccessfulR(carrier)
-        case 5 => afterBlockingFailedR(carrier)
-        case 6 => evalOnR(carrier)
-        case 7 => cedeR(carrier)
-        case 8 => autoCedeR(carrier)
+        case 4 => afterBlockingSuccessfulR(conts, carrier)
+        case 5 => afterBlockingFailedR(conts, carrier)
+        case 6 => evalOnR(conts, carrier)
+        case 7 => cedeR(conts, carrier)
+        case 8 => autoCedeR(conts, carrier)
         case 9 => ()
       }
     } catch {
@@ -219,6 +219,7 @@ private final class IOFiber[A](
       _cur0: IO[Any],
       cancelationIterations: Int,
       autoCedeIterations: Int,
+      conts: ByteStack,
       carrier: WorkerThread): Unit = {
     /*
      * `cur` will be set to `EndFiber` when the runloop needs to terminate,
@@ -261,11 +262,21 @@ private final class IOFiber[A](
       (cur0.tag: @switch) match {
         case 0 =>
           val cur = cur0.asInstanceOf[Pure[Any]]
-          runLoop(succeeded(cur.value, 0, carrier), nextCancelation, nextAutoCede, carrier)
+          runLoop(
+            succeeded(cur.value, 0, conts, carrier),
+            nextCancelation,
+            nextAutoCede,
+            conts,
+            carrier)
 
         case 1 =>
           val cur = cur0.asInstanceOf[Error]
-          runLoop(failed(cur.t, 0, carrier), nextCancelation, nextAutoCede, carrier)
+          runLoop(
+            failed(cur.t, 0, conts, carrier),
+            nextCancelation,
+            nextAutoCede,
+            conts,
+            carrier)
 
         case 2 =>
           val cur = cur0.asInstanceOf[Delay[Any]]
@@ -278,30 +289,37 @@ private final class IOFiber[A](
             }
 
           val next =
-            if (error == null) succeeded(r, 0, carrier)
-            else failed(error, 0, carrier)
+            if (error == null) succeeded(r, 0, conts, carrier)
+            else failed(error, 0, conts, carrier)
 
-          runLoop(next, nextCancelation, nextAutoCede, carrier)
+          runLoop(next, nextCancelation, nextAutoCede, conts, carrier)
 
         /* RealTime */
         case 3 =>
           runLoop(
-            succeeded(runtime.scheduler.nowMillis().millis, 0, carrier),
+            succeeded(runtime.scheduler.nowMillis().millis, 0, conts, carrier),
             nextCancelation,
             nextAutoCede,
+            conts,
             carrier)
 
         /* Monotonic */
         case 4 =>
           runLoop(
-            succeeded(runtime.scheduler.monotonicNanos().nanos, 0, carrier),
+            succeeded(runtime.scheduler.monotonicNanos().nanos, 0, conts, carrier),
             nextCancelation,
             nextAutoCede,
+            conts,
             carrier)
 
         /* ReadEC */
         case 5 =>
-          runLoop(succeeded(currentCtx, 0, carrier), nextCancelation, nextAutoCede, carrier)
+          runLoop(
+            succeeded(currentCtx, 0, conts, carrier),
+            nextCancelation,
+            nextAutoCede,
+            conts,
+            carrier)
 
         case 6 =>
           val cur = cur0.asInstanceOf[Map[Any, Any]]
@@ -317,17 +335,23 @@ private final class IOFiber[A](
                 case NonFatal(t) => error = t
               }
 
-            if (error == null) succeeded(result, 0, carrier) else failed(error, 0, carrier)
+            if (error == null) succeeded(result, 0, conts, carrier)
+            else failed(error, 0, conts, carrier)
           }
 
           (ioe.tag: @switch) match {
             case 0 =>
               val pure = ioe.asInstanceOf[Pure[Any]]
-              runLoop(next(pure.value), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(next(pure.value), nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case 1 =>
               val error = ioe.asInstanceOf[Error]
-              runLoop(failed(error.t, 0, carrier), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(
+                failed(error.t, 0, conts, carrier),
+                nextCancelation - 1,
+                nextAutoCede,
+                conts,
+                carrier)
 
             case 2 =>
               val delay = ioe.asInstanceOf[Delay[Any]]
@@ -341,25 +365,26 @@ private final class IOFiber[A](
                 }
 
               val nextIO =
-                if (error == null) succeeded(result, 0, carrier) else failed(error, 0, carrier)
-              runLoop(nextIO, nextCancelation - 1, nextAutoCede, carrier)
+                if (error == null) succeeded(result, 0, conts, carrier)
+                else failed(error, 0, conts, carrier)
+              runLoop(nextIO, nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case 3 =>
               val realTime = runtime.scheduler.nowMillis().millis
-              runLoop(next(realTime), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(next(realTime), nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case 4 =>
               val monotonic = runtime.scheduler.monotonicNanos().nanos
-              runLoop(next(monotonic), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(next(monotonic), nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case 5 =>
               val ec = currentCtx
-              runLoop(next(ec), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(next(ec), nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case _ =>
               objectState.push(f)
               conts.push(MapK)
-              runLoop(ioe, nextCancelation, nextAutoCede, carrier)
+              runLoop(ioe, nextCancelation, nextAutoCede, conts, carrier)
           }
 
         case 7 =>
@@ -371,17 +396,22 @@ private final class IOFiber[A](
           def next(v: Any): IO[Any] =
             try f(v)
             catch {
-              case NonFatal(t) => failed(t, 0, carrier)
+              case NonFatal(t) => failed(t, 0, conts, carrier)
             }
 
           (ioe.tag: @switch) match {
             case 0 =>
               val pure = ioe.asInstanceOf[Pure[Any]]
-              runLoop(next(pure.value), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(next(pure.value), nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case 1 =>
               val error = ioe.asInstanceOf[Error]
-              runLoop(failed(error.t, 0, carrier), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(
+                failed(error.t, 0, conts, carrier),
+                nextCancelation - 1,
+                nextAutoCede,
+                conts,
+                carrier)
 
             case 2 =>
               val delay = ioe.asInstanceOf[Delay[Any]]
@@ -390,27 +420,27 @@ private final class IOFiber[A](
               val result =
                 try f(delay.thunk())
                 catch {
-                  case NonFatal(t) => failed(t, 0, carrier)
+                  case NonFatal(t) => failed(t, 0, conts, carrier)
                 }
 
-              runLoop(result, nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(result, nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case 3 =>
               val realTime = runtime.scheduler.nowMillis().millis
-              runLoop(next(realTime), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(next(realTime), nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case 4 =>
               val monotonic = runtime.scheduler.monotonicNanos().nanos
-              runLoop(next(monotonic), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(next(monotonic), nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case 5 =>
               val ec = currentCtx
-              runLoop(next(ec), nextCancelation - 1, nextAutoCede, carrier)
+              runLoop(next(ec), nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case _ =>
               objectState.push(f)
               conts.push(FlatMapK)
-              runLoop(ioe, nextCancelation, nextAutoCede, carrier)
+              runLoop(ioe, nextCancelation, nextAutoCede, conts, carrier)
           }
 
         case 8 =>
@@ -422,17 +452,19 @@ private final class IOFiber[A](
             case 0 =>
               val pure = ioa.asInstanceOf[Pure[Any]]
               runLoop(
-                succeeded(Right(pure.value), 0, carrier),
+                succeeded(Right(pure.value), 0, conts, carrier),
                 nextCancelation - 1,
                 nextAutoCede,
+                conts,
                 carrier)
 
             case 1 =>
               val error = ioa.asInstanceOf[Error]
               runLoop(
-                succeeded(Left(error.t), 0, carrier),
+                succeeded(Left(error.t), 0, conts, carrier),
                 nextCancelation - 1,
                 nextAutoCede,
+                conts,
                 carrier)
 
             case 2 =>
@@ -447,37 +479,40 @@ private final class IOFiber[A](
                 }
 
               val next =
-                if (error == null) succeeded(Right(result), 0, carrier)
-                else succeeded(Left(error), 0, carrier)
-              runLoop(next, nextCancelation - 1, nextAutoCede, carrier)
+                if (error == null) succeeded(Right(result), 0, conts, carrier)
+                else succeeded(Left(error), 0, conts, carrier)
+              runLoop(next, nextCancelation - 1, nextAutoCede, conts, carrier)
 
             case 3 =>
               val realTime = runtime.scheduler.nowMillis().millis
               runLoop(
-                succeeded(Right(realTime), 0, carrier),
+                succeeded(Right(realTime), 0, conts, carrier),
                 nextCancelation - 1,
                 nextAutoCede,
+                conts,
                 carrier)
 
             case 4 =>
               val monotonic = runtime.scheduler.monotonicNanos().nanos
               runLoop(
-                succeeded(Right(monotonic), 0, carrier),
+                succeeded(Right(monotonic), 0, conts, carrier),
                 nextCancelation - 1,
                 nextAutoCede,
+                conts,
                 carrier)
 
             case 5 =>
               val ec = currentCtx
               runLoop(
-                succeeded(Right(ec), 0, carrier),
+                succeeded(Right(ec), 0, conts, carrier),
                 nextCancelation - 1,
                 nextAutoCede,
+                conts,
                 carrier)
 
             case _ =>
               conts.push(AttemptK)
-              runLoop(ioa, nextCancelation, nextAutoCede, carrier)
+              runLoop(ioa, nextCancelation, nextAutoCede, conts, carrier)
           }
 
         case 9 =>
@@ -486,7 +521,7 @@ private final class IOFiber[A](
           objectState.push(cur.f)
           conts.push(HandleErrorWithK)
 
-          runLoop(cur.ioa, nextCancelation, nextAutoCede, carrier)
+          runLoop(cur.ioa, nextCancelation, nextAutoCede, conts, carrier)
 
         /* Canceled */
         case 10 =>
@@ -495,7 +530,12 @@ private final class IOFiber[A](
             /* run finalizers immediately */
             asyncCancel(null, carrier)
           } else {
-            runLoop(succeeded((), 0, carrier), nextCancelation, nextAutoCede, carrier)
+            runLoop(
+              succeeded((), 0, conts, carrier),
+              nextCancelation,
+              nextAutoCede,
+              conts,
+              carrier)
           }
 
         case 11 =>
@@ -509,7 +549,7 @@ private final class IOFiber[A](
            * finalizer when `ioa` completes uninterrupted.
            */
           conts.push(OnCancelK)
-          runLoop(cur.ioa, nextCancelation, nextAutoCede, carrier)
+          runLoop(cur.ioa, nextCancelation, nextAutoCede, conts, carrier)
 
         case 12 =>
           val cur = cur0.asInstanceOf[Uncancelable[Any]]
@@ -525,7 +565,7 @@ private final class IOFiber[A](
            * to unmask once body completes.
            */
           conts.push(UncancelableK)
-          runLoop(cur.body(poll), nextCancelation, nextAutoCede, carrier)
+          runLoop(cur.body(poll), nextCancelation, nextAutoCede, conts, carrier)
 
         case 13 =>
           val cur = cur0.asInstanceOf[Uncancelable.UnmaskRunLoop[Any]]
@@ -543,7 +583,7 @@ private final class IOFiber[A](
             conts.push(UnmaskK)
           }
 
-          runLoop(cur.ioa, nextCancelation, nextAutoCede, carrier)
+          runLoop(cur.ioa, nextCancelation, nextAutoCede, conts, carrier)
 
         case 14 =>
           val cur = cur0.asInstanceOf[IOCont[Any, Any]]
@@ -687,7 +727,7 @@ private final class IOFiber[A](
 
           val next = body[IO].apply(cb, get, FunctionK.id)
 
-          runLoop(next, nextCancelation, nextAutoCede, carrier)
+          runLoop(next, nextCancelation, nextAutoCede, conts, carrier)
 
         case 15 =>
           val cur = cur0.asInstanceOf[IOCont.Get[Any]]
@@ -779,11 +819,11 @@ private final class IOFiber[A](
             if (!shouldFinalize()) {
               /* we weren't canceled, so resume the runloop */
               val next = result match {
-                case Left(t) => failed(t, 0, carrier)
-                case Right(a) => succeeded(a, 0, carrier)
+                case Left(t) => failed(t, 0, conts, carrier)
+                case Right(a) => succeeded(a, 0, conts, carrier)
               }
 
-              runLoop(next, nextCancelation, nextAutoCede, carrier)
+              runLoop(next, nextCancelation, nextAutoCede, conts, carrier)
             } else if (outcome == null) {
               /*
                * we were canceled, but `cancel` cannot run the finalisers
@@ -816,7 +856,12 @@ private final class IOFiber[A](
 
           scheduleOn(ec, carrier, fiber)
 
-          runLoop(succeeded(fiber, 0, carrier), nextCancelation, nextAutoCede, carrier)
+          runLoop(
+            succeeded(fiber, 0, conts, carrier),
+            nextCancelation,
+            nextAutoCede,
+            conts,
+            carrier)
 
         case 18 =>
           val cur = cur0.asInstanceOf[RacePair[Any, Any]]
@@ -865,7 +910,7 @@ private final class IOFiber[A](
                 }
             }
 
-          runLoop(next, nextCancelation, nextAutoCede, carrier)
+          runLoop(next, nextCancelation, nextAutoCede, conts, carrier)
 
         case 19 =>
           val cur = cur0.asInstanceOf[Sleep]
@@ -877,14 +922,14 @@ private final class IOFiber[A](
             }
           }
 
-          runLoop(next, nextCancelation, nextAutoCede, carrier)
+          runLoop(next, nextCancelation, nextAutoCede, conts, carrier)
 
         case 20 =>
           val cur = cur0.asInstanceOf[EvalOn[Any]]
 
           /* fast-path when it's an identity transformation */
           if (cur.ec eq currentCtx) {
-            runLoop(cur.ioa, nextCancelation, nextAutoCede, carrier)
+            runLoop(cur.ioa, nextCancelation, nextAutoCede, conts, carrier)
           } else {
             val ec = cur.ec
             currentCtx = ec
@@ -909,6 +954,7 @@ private final class IOFiber[A](
               interruptibleImpl(cur, runtime.blocking),
               nextCancelation,
               nextAutoCede,
+              conts,
               carrier)
           }
 
@@ -917,7 +963,12 @@ private final class IOFiber[A](
 
           val (nextLocalState, value) = cur.f(localState)
           localState = nextLocalState
-          runLoop(succeeded(value, 0, carrier), nextCancelation, nextAutoCede, carrier)
+          runLoop(
+            succeeded(value, 0, conts, carrier),
+            nextCancelation,
+            nextAutoCede,
+            conts,
+            carrier)
       }
     }
   }
@@ -978,7 +1029,7 @@ private final class IOFiber[A](
       /* suppress all subsequent cancelation on this fiber */
       masks += 1
       // println(s"$name: Running finalizers on ${Thread.currentThread().getName}")
-      runLoop(finalizers.pop(), cancelationCheckThreshold, autoYieldThreshold, carrier)
+      runLoop(finalizers.pop(), cancelationCheckThreshold, autoYieldThreshold, conts, carrier)
     } else {
       if (cb != null)
         cb(RightUnit)
@@ -1043,25 +1094,33 @@ private final class IOFiber[A](
   }
 
   @tailrec
-  private[this] def succeeded(result: Any, depth: Int, carrier: WorkerThread): IO[Any] =
+  private[this] def succeeded(
+      result: Any,
+      depth: Int,
+      conts: ByteStack,
+      carrier: WorkerThread): IO[Any] =
     (conts.pop(): @switch) match {
-      case 0 => mapK(result, depth, carrier)
-      case 1 => flatMapK(result, depth, carrier)
-      case 2 => cancelationLoopSuccessK(carrier)
+      case 0 => mapK(result, depth, conts, carrier)
+      case 1 => flatMapK(result, depth, conts, carrier)
+      case 2 => cancelationLoopSuccessK(conts, carrier)
       case 3 => runTerminusSuccessK(result)
       case 4 => evalOnSuccessK(result, carrier)
       case 5 =>
         /* handleErrorWithK */
         // this is probably faster than the pre-scan we do in failed, since handlers are rarer than flatMaps
         objectState.pop()
-        succeeded(result, depth, carrier)
-      case 6 => onCancelSuccessK(result, depth, carrier)
-      case 7 => uncancelableSuccessK(result, depth, carrier)
-      case 8 => unmaskSuccessK(result, depth, carrier)
-      case 9 => succeeded(Right(result), depth, carrier)
+        succeeded(result, depth, conts, carrier)
+      case 6 => onCancelSuccessK(result, depth, conts, carrier)
+      case 7 => uncancelableSuccessK(result, depth, conts, carrier)
+      case 8 => unmaskSuccessK(result, depth, conts, carrier)
+      case 9 => succeeded(Right(result), depth, conts, carrier)
     }
 
-  private[this] def failed(error: Throwable, depth: Int, carrier: WorkerThread): IO[Any] = {
+  private[this] def failed(
+      error: Throwable,
+      depth: Int,
+      conts: ByteStack,
+      carrier: WorkerThread): IO[Any] = {
     // println(s"<$name> failed() with $error")
     val buffer = conts.unsafeBuffer()
 
@@ -1087,14 +1146,14 @@ private final class IOFiber[A](
     (k: @switch) match {
       /* (case 0) will never continue to mapK */
       /* (case 1) will never continue to flatMapK */
-      case 2 => cancelationLoopFailureK(error, carrier)
+      case 2 => cancelationLoopFailureK(error, conts, carrier)
       case 3 => runTerminusFailureK(error)
       case 4 => evalOnFailureK(error, carrier)
-      case 5 => handleErrorWithK(error, depth, carrier)
-      case 6 => onCancelFailureK(error, depth, carrier)
-      case 7 => uncancelableFailureK(error, depth, carrier)
-      case 8 => unmaskFailureK(error, depth, carrier)
-      case 9 => succeeded(Left(error), depth, carrier) // attemptK
+      case 5 => handleErrorWithK(error, depth, conts, carrier)
+      case 6 => onCancelFailureK(error, depth, conts, carrier)
+      case 7 => uncancelableFailureK(error, depth, conts, carrier)
+      case 8 => unmaskFailureK(error, depth, conts, carrier)
+      case 9 => succeeded(Left(error), depth, conts, carrier) // attemptK
     }
   }
 
@@ -1170,18 +1229,28 @@ private final class IOFiber[A](
 
       val io = resumeIO
       resumeIO = null
-      runLoop(io, cancelationCheckThreshold, autoYieldThreshold, carrier)
+      runLoop(io, cancelationCheckThreshold, autoYieldThreshold, conts, carrier)
     }
   }
 
-  private[this] def asyncContinueSuccessfulR(carrier: WorkerThread): Unit = {
+  private[this] def asyncContinueSuccessfulR(conts: ByteStack, carrier: WorkerThread): Unit = {
     val a = objectState.pop().asInstanceOf[Any]
-    runLoop(succeeded(a, 0, carrier), cancelationCheckThreshold, autoYieldThreshold, carrier)
+    runLoop(
+      succeeded(a, 0, conts, carrier),
+      cancelationCheckThreshold,
+      autoYieldThreshold,
+      conts,
+      carrier)
   }
 
-  private[this] def asyncContinueFailedR(carrier: WorkerThread): Unit = {
+  private[this] def asyncContinueFailedR(conts: ByteStack, carrier: WorkerThread): Unit = {
     val t = objectState.pop().asInstanceOf[Throwable]
-    runLoop(failed(t, 0, carrier), cancelationCheckThreshold, autoYieldThreshold, carrier)
+    runLoop(
+      failed(t, 0, conts, carrier),
+      cancelationCheckThreshold,
+      autoYieldThreshold,
+      conts,
+      carrier)
   }
 
   private[this] def blockingR(): Unit = {
@@ -1204,41 +1273,56 @@ private final class IOFiber[A](
     currentCtx.execute(this)
   }
 
-  private[this] def afterBlockingSuccessfulR(carrier: WorkerThread): Unit = {
+  private[this] def afterBlockingSuccessfulR(conts: ByteStack, carrier: WorkerThread): Unit = {
     val result = objectState.pop()
     runLoop(
-      succeeded(result, 0, carrier),
+      succeeded(result, 0, conts, carrier),
       cancelationCheckThreshold,
       autoYieldThreshold,
+      conts,
       carrier)
   }
 
-  private[this] def afterBlockingFailedR(carrier: WorkerThread): Unit = {
+  private[this] def afterBlockingFailedR(conts: ByteStack, carrier: WorkerThread): Unit = {
     val error = objectState.pop().asInstanceOf[Throwable]
-    runLoop(failed(error, 0, carrier), cancelationCheckThreshold, autoYieldThreshold, carrier)
+    runLoop(
+      failed(error, 0, conts, carrier),
+      cancelationCheckThreshold,
+      autoYieldThreshold,
+      conts,
+      carrier)
   }
 
-  private[this] def evalOnR(carrier: WorkerThread): Unit = {
+  private[this] def evalOnR(conts: ByteStack, carrier: WorkerThread): Unit = {
     val ioa = resumeIO
     resumeIO = null
-    runLoop(ioa, cancelationCheckThreshold, autoYieldThreshold, carrier)
+    runLoop(ioa, cancelationCheckThreshold, autoYieldThreshold, conts, carrier)
   }
 
-  private[this] def cedeR(carrier: WorkerThread): Unit = {
-    runLoop(succeeded((), 0, carrier), cancelationCheckThreshold, autoYieldThreshold, carrier)
+  private[this] def cedeR(conts: ByteStack, carrier: WorkerThread): Unit = {
+    runLoop(
+      succeeded((), 0, conts, carrier),
+      cancelationCheckThreshold,
+      autoYieldThreshold,
+      conts,
+      carrier)
   }
 
-  private[this] def autoCedeR(carrier: WorkerThread): Unit = {
+  private[this] def autoCedeR(conts: ByteStack, carrier: WorkerThread): Unit = {
     val io = resumeIO
     resumeIO = null
-    runLoop(io, cancelationCheckThreshold, autoYieldThreshold, carrier)
+    runLoop(io, cancelationCheckThreshold, autoYieldThreshold, conts, carrier)
   }
 
   //////////////////////////////////////
   // Implementations of continuations //
   //////////////////////////////////////
 
-  private[this] def mapK(result: Any, depth: Int, carrier: WorkerThread): IO[Any] = {
+  private[this] def mapK(
+      result: Any,
+      depth: Int,
+      conts: ByteStack,
+      carrier: WorkerThread): IO[Any] = {
     val f = objectState.pop().asInstanceOf[Any => Any]
 
     var error: Throwable = null
@@ -1253,24 +1337,30 @@ private final class IOFiber[A](
       if (error == null) IO.Pure(transformed)
       else IO.Error(error)
     } else {
-      if (error == null) succeeded(transformed, depth + 1, carrier)
-      else failed(error, depth + 1, carrier)
+      if (error == null) succeeded(transformed, depth + 1, conts, carrier)
+      else failed(error, depth + 1, conts, carrier)
     }
   }
 
-  private[this] def flatMapK(result: Any, depth: Int, carrier: WorkerThread): IO[Any] = {
+  private[this] def flatMapK(
+      result: Any,
+      depth: Int,
+      conts: ByteStack,
+      carrier: WorkerThread): IO[Any] = {
     val f = objectState.pop().asInstanceOf[Any => IO[Any]]
 
     try f(result)
     catch {
-      case NonFatal(t) => failed(t, depth + 1, carrier)
+      case NonFatal(t) => failed(t, depth + 1, conts, carrier)
     }
   }
 
-  private[this] def cancelationLoopSuccessK(carrier: WorkerThread): IO[Any] = {
+  private[this] def cancelationLoopSuccessK(
+      conts: ByteStack,
+      carrier: WorkerThread): IO[Any] = {
     if (!finalizers.isEmpty()) {
       conts.push(CancelationLoopK)
-      runLoop(finalizers.pop(), cancelationCheckThreshold, autoYieldThreshold, carrier)
+      runLoop(finalizers.pop(), cancelationCheckThreshold, autoYieldThreshold, conts, carrier)
     } else {
       /* resume external canceller */
       val cb = objectState.pop()
@@ -1284,10 +1374,13 @@ private final class IOFiber[A](
     IOEndFiber
   }
 
-  private[this] def cancelationLoopFailureK(t: Throwable, carrier: WorkerThread): IO[Any] = {
+  private[this] def cancelationLoopFailureK(
+      t: Throwable,
+      conts: ByteStack,
+      carrier: WorkerThread): IO[Any] = {
     currentCtx.reportFailure(t)
 
-    cancelationLoopSuccessK(carrier)
+    cancelationLoopSuccessK(conts, carrier)
   }
 
   private[this] def runTerminusSuccessK(result: Any): IO[Any] = {
@@ -1331,57 +1424,70 @@ private final class IOFiber[A](
   private[this] def handleErrorWithK(
       t: Throwable,
       depth: Int,
+      conts: ByteStack,
       carrier: WorkerThread): IO[Any] = {
     val f = objectState.pop().asInstanceOf[Throwable => IO[Any]]
 
     try f(t)
     catch {
-      case NonFatal(t) => failed(t, depth + 1, carrier)
+      case NonFatal(t) => failed(t, depth + 1, conts, carrier)
     }
   }
 
   private[this] def onCancelSuccessK(
       result: Any,
       depth: Int,
+      conts: ByteStack,
       carrier: WorkerThread): IO[Any] = {
     finalizers.pop()
-    succeeded(result, depth + 1, carrier)
+    succeeded(result, depth + 1, conts, carrier)
   }
 
   private[this] def onCancelFailureK(
       t: Throwable,
       depth: Int,
+      conts: ByteStack,
       carrier: WorkerThread): IO[Any] = {
     finalizers.pop()
-    failed(t, depth + 1, carrier)
+    failed(t, depth + 1, conts, carrier)
   }
 
   private[this] def uncancelableSuccessK(
       result: Any,
       depth: Int,
+      conts: ByteStack,
       carrier: WorkerThread): IO[Any] = {
     masks -= 1
     // System.out.println(s"unmasking after uncancelable (isUnmasked = ${isUnmasked()})")
-    succeeded(result, depth + 1, carrier)
+    succeeded(result, depth + 1, conts, carrier)
   }
 
   private[this] def uncancelableFailureK(
       t: Throwable,
       depth: Int,
+      conts: ByteStack,
       carrier: WorkerThread): IO[Any] = {
     masks -= 1
     // System.out.println(s"unmasking after uncancelable (isUnmasked = ${isUnmasked()})")
-    failed(t, depth + 1, carrier)
+    failed(t, depth + 1, conts, carrier)
   }
 
-  private[this] def unmaskSuccessK(result: Any, depth: Int, carrier: WorkerThread): IO[Any] = {
+  private[this] def unmaskSuccessK(
+      result: Any,
+      depth: Int,
+      conts: ByteStack,
+      carrier: WorkerThread): IO[Any] = {
     masks += 1
-    succeeded(result, depth + 1, carrier)
+    succeeded(result, depth + 1, conts, carrier)
   }
 
-  private[this] def unmaskFailureK(t: Throwable, depth: Int, carrier: WorkerThread): IO[Any] = {
+  private[this] def unmaskFailureK(
+      t: Throwable,
+      depth: Int,
+      conts: ByteStack,
+      carrier: WorkerThread): IO[Any] = {
     masks += 1
-    failed(t, depth + 1, carrier)
+    failed(t, depth + 1, conts, carrier)
   }
 }
 
