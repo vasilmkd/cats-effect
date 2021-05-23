@@ -680,7 +680,6 @@ private final class IOFiber[A](
                 // `resume()` is a volatile read of `suspended` through which
                 // `wasFinalizing` is published
                 if (finalizing == state.wasFinalizing) {
-                  val carrier = inferCarrier()
                   if (!shouldFinalize()) {
                     /* we weren't canceled or completed, so schedule the runloop for execution */
                     e match {
@@ -691,13 +690,14 @@ private final class IOFiber[A](
                         resumeTag = AsyncContinueSuccessfulR
                         objectState.push(a.asInstanceOf[AnyRef])
                     }
-                    continueOn(carrier)
+
+                    continueOnAsync()
                   } else {
                     /*
                      * we were canceled, but since we have won the race on `suspended`
                      * via `resume`, `cancel` cannot run the finalisers, and we have to.
                      */
-                    asyncCancel(null, carrier)
+                    asyncCancel(null, inferCarrier())
                   }
                 } else {
                   /*
@@ -1220,16 +1220,17 @@ private final class IOFiber[A](
     }
   }
 
-  private[this] def continueOn(carrier: WorkerThread): Unit = {
-    if (carrier ne null) {
-      carrier.schedule(this)
-    } else {
-      val ec = currentCtx
-      if (ec.isInstanceOf[WorkStealingThreadPool]) {
-        ec.asInstanceOf[WorkStealingThreadPool].executeFiber(this)
+  private[this] def continueOnAsync(): Unit = {
+    val ec = currentCtx
+    if (ec.isInstanceOf[WorkStealingThreadPool]) {
+      val thread = Thread.currentThread()
+      if (thread.isInstanceOf[WorkerThread]) {
+        thread.asInstanceOf[WorkerThread].schedule(this)
       } else {
-        continueOnForeignEC(ec, this)
+        ec.asInstanceOf[WorkStealingThreadPool].executeFiber(this)
       }
+    } else {
+      continueOnForeignEC(ec, this)
     }
   }
 
