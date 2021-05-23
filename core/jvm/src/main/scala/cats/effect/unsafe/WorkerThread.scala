@@ -99,7 +99,7 @@ private[effect] final class WorkerThread(
    */
   def schedule(fiber: IOFiber[_]): Unit = {
     val rnd = random
-    queue.enqueue(fiber, batched, overflow, rnd, this)
+    queue.enqueue(fiber, batched, overflow, rnd)
     pool.notifyParked(rnd)
     ()
   }
@@ -237,7 +237,7 @@ private[effect] final class WorkerThread(
           val fiber = overflow.poll(rnd)
           if (fiber ne null) {
             // Run the fiber.
-            fiber.execWithCarrier(self)
+            fiber.exec(self)
           }
           // Transition to executing fibers from the local queue.
           state = 7
@@ -250,13 +250,13 @@ private[effect] final class WorkerThread(
             // A batch of fibers has been successfully obtained. Proceed to
             // enqueue all of the fibers on the local queue and execute the
             // first one.
-            val fiber = queue.enqueueBatch(batch, self)
+            val fiber = queue.enqueueBatch(batch)
             // Many fibers have been enqueued on the local queue. Notify other
             // worker threads.
             pool.notifyParked(rnd)
             // Directly run a fiber from the batch. The carrier thread has been
             // set already in `enqueueBatch`.
-            fiber.exec()
+            fiber.exec(self)
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -271,7 +271,7 @@ private[effect] final class WorkerThread(
           val fiber = overflow.poll(rnd)
           if (fiber ne null) {
             // Run the fiber.
-            fiber.execWithCarrier(self)
+            fiber.exec(self)
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -299,14 +299,14 @@ private[effect] final class WorkerThread(
 
         case 4 =>
           // Try stealing fibers from other worker threads.
-          val fiber = pool.stealFromOtherWorkerThread(index, rnd, self)
+          val fiber = pool.stealFromOtherWorkerThread(index, rnd)
           if (fiber ne null) {
             // Successful steal. Announce that the current thread is no longer
             // looking for work.
             pool.transitionWorkerFromSearching(rnd)
             // Run the stolen fiber. The carrier thread has been set already by
             // the stealing operation.
-            fiber.exec()
+            fiber.exec(self)
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -337,14 +337,14 @@ private[effect] final class WorkerThread(
             // A batch of fibers has been successfully obtained. Proceed to
             // enqueue all of the fibers on the local queue and execute the
             // first one.
-            val fiber = queue.enqueueBatch(batch, self)
+            val fiber = queue.enqueueBatch(batch)
             // Not searching for work anymore. As a bonus, if this was indeed
             // the last searching worker thread, this will wake up another
             // thread to help out with the newly acquired fibers.
             pool.transitionWorkerFromSearching(rnd)
             // Directly run a fiber from the batch. The carrier thread has been
             // set already in `enqueueBatch`.
-            fiber.exec()
+            fiber.exec(self)
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -360,7 +360,7 @@ private[effect] final class WorkerThread(
             // Announce that the current thread is no longer looking for work.
             pool.transitionWorkerFromSearching(rnd)
             // Run the fiber.
-            fiber.execWithCarrier(self)
+            fiber.exec(self)
             // Transition to executing fibers from the local queue.
             state = 7
           } else {
@@ -386,7 +386,7 @@ private[effect] final class WorkerThread(
           if (fiber ne null) {
             // Run the fiber. All fibers in the local queue have their carrier
             // thread reference set already.
-            fiber.exec()
+            fiber.exec(self)
             // Continue executing fibers from the local queue.
             state += 1
           } else {

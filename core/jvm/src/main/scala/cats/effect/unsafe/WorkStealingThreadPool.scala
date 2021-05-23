@@ -156,8 +156,7 @@ private[effect] final class WorkStealingThreadPool(
    */
   private[unsafe] def stealFromOtherWorkerThread(
       dest: Int,
-      random: ThreadLocalRandom,
-      carrier: WorkerThread): IOFiber[_] = {
+      random: ThreadLocalRandom): IOFiber[_] = {
     val destQueue = localQueues(dest)
     val from = random.nextInt(threadCount)
 
@@ -168,7 +167,7 @@ private[effect] final class WorkStealingThreadPool(
 
       if (index != dest) {
         // Do not steal from yourself.
-        val res = localQueues(index).stealInto(destQueue, carrier)
+        val res = localQueues(index).stealInto(destQueue)
         if (res != null) {
           // Successful steal. Return the next fiber to be executed.
           return res

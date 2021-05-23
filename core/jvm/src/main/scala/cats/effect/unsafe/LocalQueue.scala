@@ -226,8 +226,7 @@ private final class LocalQueue {
       fiber: IOFiber[_],
       batched: ScalQueue[Array[IOFiber[_]]],
       overflow: ScalQueue[IOFiber[_]],
-      random: ThreadLocalRandom,
-      carrier: WorkerThread): Unit = {
+      random: ThreadLocalRandom): Unit = {
     // A plain, unsynchronized load of the tail of the local queue.
     val tl = tail
 
@@ -250,7 +249,6 @@ private final class LocalQueue {
         val newTl = unsignedShortAddition(tl, 1)
         tailPublisher.lazySet(newTl)
         tail = newTl
-        fiber.setCarrier(carrier)
         return
       }
 
@@ -345,7 +343,7 @@ private final class LocalQueue {
    * @param batch the batch of fibers to be enqueued on this local queue
    * @return a fiber to be executed directly
    */
-  def enqueueBatch(batch: Array[IOFiber[_]], carrier: WorkerThread): IOFiber[_] = {
+  def enqueueBatch(batch: Array[IOFiber[_]]): IOFiber[_] = {
     // A plain, unsynchronized load of the tail of the local queue.
     val tl = tail
 
@@ -365,7 +363,6 @@ private final class LocalQueue {
           val idx = index(tl + i)
           val fiber = batch(i)
           buffer(idx) = fiber
-          fiber.setCarrier(carrier)
           i += 1
         }
 
@@ -473,7 +470,7 @@ private final class LocalQueue {
    * @return a reference to the first fiber to be executed by the stealing
    *         [[WorkerThread]], or `null` if the stealing was unsuccessful
    */
-  def stealInto(dst: LocalQueue, carrier: WorkerThread): IOFiber[_] = {
+  def stealInto(dst: LocalQueue): IOFiber[_] = {
     // A plain, unsynchronized load of the tail of the destination queue, owned
     // by the executing thread.
     val dstTl = dst.plainLoadTail()
@@ -545,7 +542,6 @@ private final class LocalQueue {
           val fiber = buffer(srcIdx)
           buffer(srcIdx) = null
           dstBuffer(dstIdx) = fiber
-          fiber.setCarrier(carrier)
           i += 1
         }
 
