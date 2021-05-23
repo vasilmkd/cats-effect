@@ -1239,7 +1239,7 @@ private final class IOFiber[A](
     } else {
       val ec = currentCtx
       if (ec.isInstanceOf[WorkStealingThreadPool]) {
-        ec.asInstanceOf[WorkStealingThreadPool].scheduleFiber(this)
+        Thread.currentThread().asInstanceOf[HelperThread].schedule(this)
       } else {
         continueOnForeignEC(ec, this)
       }
@@ -1253,7 +1253,7 @@ private final class IOFiber[A](
     if (carrier ne null) {
       carrier.schedule(fiber)
     } else if (ec.isInstanceOf[WorkStealingThreadPool]) {
-      ec.asInstanceOf[WorkStealingThreadPool].scheduleFiber(fiber)
+      Thread.currentThread().asInstanceOf[HelperThread].schedule(fiber)
     } else {
       continueOnForeignEC(ec, fiber)
     }
