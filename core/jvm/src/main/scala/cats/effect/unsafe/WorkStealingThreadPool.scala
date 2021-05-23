@@ -364,15 +364,6 @@ private[effect] final class WorkStealingThreadPool(
   }
 
   /**
-   * Reschedules the given fiber directly on the local work stealing queue on the same thread.
-   * This method executes an unchecked cast to a `WorkerThread` and should only ever be called
-   * directly from a `WorkerThread`.
-   */
-  private[effect] def scheduleFiber(fiber: IOFiber[_]): Unit = {
-    Thread.currentThread().asInstanceOf[HelperThread].schedule(fiber)
-  }
-
-  /**
    * Executes a [[java.lang.Runnable]] on the [[WorkStealingThreadPool]].
    *
    * If the submitted `runnable` is a general purpose computation, it is
