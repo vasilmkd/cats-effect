@@ -1213,6 +1213,8 @@ private final class IOFiber[A](
   private[this] def continueOn(ec: ExecutionContext, carrier: WorkerThread): Unit = {
     if (carrier ne null) {
       carrier.schedule(this)
+    } else if (ec.isInstanceOf[WorkStealingThreadPool]) {
+      ec.asInstanceOf[WorkStealingThreadPool].executeFiber(this)
     } else {
       continueOnForeignEC(ec, this)
     }
@@ -1223,7 +1225,11 @@ private final class IOFiber[A](
       carrier.schedule(this)
     } else {
       val ec = currentCtx
-      continueOnForeignEC(ec, this)
+      if (ec.isInstanceOf[WorkStealingThreadPool]) {
+        ec.asInstanceOf[WorkStealingThreadPool].executeFiber(this)
+      } else {
+        continueOnForeignEC(ec, this)
+      }
     }
   }
 
@@ -1232,7 +1238,11 @@ private final class IOFiber[A](
       carrier.reschedule(this)
     } else {
       val ec = currentCtx
-      continueOnForeignEC(ec, this)
+      if (ec.isInstanceOf[WorkStealingThreadPool]) {
+        ec.asInstanceOf[WorkStealingThreadPool].rescheduleFiber(this)
+      } else {
+        continueOnForeignEC(ec, this)
+      }
     }
   }
 
@@ -1242,6 +1252,8 @@ private final class IOFiber[A](
       fiber: IOFiber[_]): Unit = {
     if (carrier ne null) {
       carrier.schedule(fiber)
+    } else if (ec.isInstanceOf[WorkStealingThreadPool]) {
+      ec.asInstanceOf[WorkStealingThreadPool].scheduleFiber(fiber)
     } else {
       continueOnForeignEC(ec, fiber)
     }
