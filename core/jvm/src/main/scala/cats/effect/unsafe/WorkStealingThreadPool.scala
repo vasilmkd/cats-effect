@@ -353,9 +353,7 @@ private[effect] final class WorkStealingThreadPool(
    */
   private[effect] def executeFiber(fiber: IOFiber[_]): Unit = {
     val thread = Thread.currentThread()
-    if (thread.isInstanceOf[WorkerThread]) {
-      thread.asInstanceOf[WorkerThread].schedule(fiber)
-    } else if (thread.isInstanceOf[HelperThread]) {
+    if (thread.isInstanceOf[HelperThread]) {
       thread.asInstanceOf[HelperThread].schedule(fiber)
     } else {
       val random = ThreadLocalRandom.current()
@@ -366,33 +364,12 @@ private[effect] final class WorkStealingThreadPool(
   }
 
   /**
-   * Reschedules the given fiber directly on the local work stealing queue on the same thread,
-   * but with the possibility to skip notifying other fibers of a potential steal target, which
-   * reduces contention in workloads running on fewer worker threads. This method executes an
-   * unchecked cast to a `WorkerThread` and should only ever be called directly from a
-   * `WorkerThread`.
-   */
-  private[effect] def rescheduleFiber(fiber: IOFiber[_]): Unit = {
-    val thread = Thread.currentThread()
-    if (thread.isInstanceOf[WorkerThread]) {
-      thread.asInstanceOf[WorkerThread].reschedule(fiber)
-    } else {
-      thread.asInstanceOf[HelperThread].schedule(fiber)
-    }
-  }
-
-  /**
    * Reschedules the given fiber directly on the local work stealing queue on the same thread.
    * This method executes an unchecked cast to a `WorkerThread` and should only ever be called
    * directly from a `WorkerThread`.
    */
   private[effect] def scheduleFiber(fiber: IOFiber[_]): Unit = {
-    val thread = Thread.currentThread()
-    if (thread.isInstanceOf[WorkerThread]) {
-      thread.asInstanceOf[WorkerThread].schedule(fiber)
-    } else {
-      thread.asInstanceOf[HelperThread].schedule(fiber)
-    }
+    Thread.currentThread().asInstanceOf[HelperThread].schedule(fiber)
   }
 
   /**
