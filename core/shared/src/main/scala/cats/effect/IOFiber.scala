@@ -178,7 +178,7 @@ private final class IOFiber[A](
       IO {
         val handle = registerListener(oc => cb(Right(oc)))
 
-        if (handle == null)
+        if (handle eq null)
           None /* we were already invoked, so no `CallbackStack` needs to be managed */
         else
           Some(IO(handle.clearCurrent()))
@@ -204,7 +204,7 @@ private final class IOFiber[A](
     }
 
     /* Null IO, blow up but keep the failure within IO */
-    val cur0: IO[Any] = if (_cur0 == null) {
+    val cur0: IO[Any] = if (_cur0 eq null) {
       IO.Error(new NullPointerException())
     } else {
       _cur0
@@ -267,7 +267,7 @@ private final class IOFiber[A](
             }
 
           val next =
-            if (error == null) succeeded(r, 0, conts, objectState, carrier)
+            if (error eq null) succeeded(r, 0, conts, objectState, carrier)
             else failed(error, 0, conts, objectState, carrier)
 
           runLoop(next, nextCancelation, nextAutoCede, conts, objectState, carrier)
@@ -319,7 +319,7 @@ private final class IOFiber[A](
                   onFatalFailure(t)
               }
 
-            if (error == null) succeeded(result, 0, conts, objectState, carrier)
+            if (error eq null) succeeded(result, 0, conts, objectState, carrier)
             else failed(error, 0, conts, objectState, carrier)
           }
 
@@ -359,7 +359,7 @@ private final class IOFiber[A](
                 }
 
               val nextIO =
-                if (error == null) succeeded(result, 0, conts, objectState, carrier)
+                if (error eq null) succeeded(result, 0, conts, objectState, carrier)
                 else failed(error, 0, conts, objectState, carrier)
               runLoop(nextIO, nextCancelation - 1, nextAutoCede, conts, objectState, carrier)
 
@@ -515,7 +515,7 @@ private final class IOFiber[A](
                 }
 
               val next =
-                if (error == null) succeeded(Right(result), 0, conts, objectState, carrier)
+                if (error eq null) succeeded(Right(result), 0, conts, objectState, carrier)
                 else succeeded(Left(error), 0, conts, objectState, carrier)
               runLoop(next, nextCancelation - 1, nextAutoCede, conts, objectState, carrier)
 
@@ -706,7 +706,7 @@ private final class IOFiber[A](
                    */
                   suspend()
                 }
-              } else if (finalizing == state.wasFinalizing && !shouldFinalize() && outcome == null) {
+              } else if (finalizing == state.wasFinalizing && !shouldFinalize() && (outcome eq null)) {
                 /*
                  * If we aren't canceled or completed, and we're
                  * still in the same finalization state, loop on
@@ -863,7 +863,7 @@ private final class IOFiber[A](
               }
 
               runLoop(next, nextCancelation, nextAutoCede, conts, objectState, carrier)
-            } else if (outcome == null) {
+            } else if (outcome eq null) {
               /*
                * we were canceled, but `cancel` cannot run the finalisers
                * because the runloop was not suspended, so we have to run them
@@ -1048,7 +1048,7 @@ private final class IOFiber[A](
     /* clear out literally everything to avoid any possible memory leaks */
 
     /* conts may be null if the fiber was canceled before it was started */
-    if (conts != null)
+    if (conts ne null)
       conts.invalidate()
 
     currentCtx = null
@@ -1082,7 +1082,7 @@ private final class IOFiber[A](
         objectState,
         carrier)
     } else {
-      if (cb != null)
+      if (cb ne null)
         cb(RightUnit)
 
       done(IOFiber.OutcomeCanceled.asInstanceOf[OutcomeIO[A]], conts, objectState)
@@ -1127,11 +1127,11 @@ private final class IOFiber[A](
 
   /* can return null, meaning that no CallbackStack needs to be later invalidated */
   private def registerListener(listener: OutcomeIO[A] => Unit): CallbackStack[A] = {
-    if (outcome == null) {
+    if (outcome eq null) {
       val back = callbacks.push(listener)
 
       /* double-check */
-      if (outcome != null) {
+      if (outcome ne null) {
         back.clearCurrent()
         listener(outcome) /* the implementation of async saves us from double-calls */
         null
@@ -1336,7 +1336,7 @@ private final class IOFiber[A](
           onFatalFailure(t)
       }
 
-    if (error == null) {
+    if (error eq null) {
       resumeTag = AfterBlockingSuccessfulR
       objectState.push(r.asInstanceOf[AnyRef])
     } else {
@@ -1429,10 +1429,10 @@ private final class IOFiber[A](
       }
 
     if (depth > MaxStackDepth) {
-      if (error == null) IO.Pure(transformed)
+      if (error eq null) IO.Pure(transformed)
       else IO.Error(error)
     } else {
-      if (error == null) succeeded(transformed, depth + 1, conts, objectState, carrier)
+      if (error eq null) succeeded(transformed, depth + 1, conts, objectState, carrier)
       else failed(error, depth + 1, conts, objectState, carrier)
     }
   }
@@ -1470,7 +1470,7 @@ private final class IOFiber[A](
     } else {
       /* resume external canceller */
       val cb = objectState.pop()
-      if (cb != null) {
+      if (cb ne null) {
         cb.asInstanceOf[Either[Throwable, Unit] => Unit](RightUnit)
       }
       /* resume joiners */
