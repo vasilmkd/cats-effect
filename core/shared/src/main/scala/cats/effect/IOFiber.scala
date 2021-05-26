@@ -85,7 +85,7 @@ private final class IOFiber[A](
    * relocate our runloop to another fiber.
    */
   private[this] val contsRef: ByteStack = new ByteStack(16)
-  private[this] val objectStateRef = new ArrayStack[AnyRef](16)
+  private[this] val objectStateRef: ArrayStack[AnyRef] = new ArrayStack(16)
 
   /* fast-path to head */
   private[this] var currentCtx: ExecutionContext = startEC
@@ -95,9 +95,9 @@ private final class IOFiber[A](
   private[this] var masks: Int = initMask
   private[this] var finalizing: Boolean = false
 
-  private[this] val finalizers = new ArrayStack[IO[Unit]](16)
+  private[this] val finalizers: ArrayStack[IO[Unit]] = new ArrayStack(16)
 
-  private[this] val callbacks = new CallbackStack[A](cb)
+  private[this] val callbacks: CallbackStack[A] = new CallbackStack(cb)
 
   private[this] var localState: IOLocalState = initLocalState
 
@@ -109,13 +109,13 @@ private final class IOFiber[A](
   private[this] var resumeIO: IO[Any] = startIO
 
   /* prefetch for Right(()) */
-  private[this] val RightUnit = IOFiber.RightUnit
+  private[this] val RightUnit: Either[Throwable, Unit] = IOFiber.RightUnit
 
   /* similar prefetch for EndFiber */
-  private[this] val IOEndFiber = IO.EndFiber
+  private[this] val IOEndFiber: IO[Nothing] = IO.EndFiber
 
-  private[this] val cancelationCheckThreshold = runtime.config.cancelationCheckThreshold
-  private[this] val autoYieldThreshold = runtime.config.autoYieldThreshold
+  private[this] val cancelationCheckThreshold: Int = runtime.config.cancelationCheckThreshold
+  private[this] val autoYieldThreshold: Int = runtime.config.autoYieldThreshold
 
   override def run(): Unit = {
     // insert a read barrier after every async boundary
