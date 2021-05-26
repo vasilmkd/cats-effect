@@ -84,7 +84,7 @@ private final class IOFiber[A](
    * Ideally these would be on the stack, but they can't because we sometimes need to
    * relocate our runloop to another fiber.
    */
-  private[this] val conts: ByteStack = new ByteStack(16)
+  private[this] val contsRef: ByteStack = new ByteStack(16)
   private[this] val objectState = new ArrayStack[AnyRef](16)
 
   /* fast-path to head */
@@ -120,6 +120,9 @@ private final class IOFiber[A](
   override def run(): Unit = {
     // insert a read barrier after every async boundary
     readBarrier()
+
+    val conts = contsRef
+
     (resumeTag: @switch) match {
       case 0 => execR(conts, objectState)
       case 1 => asyncContinueSuccessfulR(conts, objectState)
@@ -150,7 +153,7 @@ private final class IOFiber[A](
           /* if we have async finalizers, runLoop may return early */
           IO.async_[Unit] { fin =>
             // println(s"${name}: canceller started at ${Thread.currentThread().getName} + ${suspended.get()}")
-            asyncCancel(fin, conts, objectState)
+            asyncCancel(fin, contsRef, objectState)
           }
         } else {
           /*
@@ -962,7 +965,7 @@ private final class IOFiber[A](
    * Only the owner of the run-loop can invoke this.
    * Should be invoked at most once per fiber before termination.
    */
-  private[this] def done(oc: OutcomeIO[A]): Unit = {
+  private[this] def done(oc: OutcomeIO[A], conts: ByteStack): Unit = {
     // println(s"<$name> invoking done($oc); callback = ${callback.get()}")
     join = IO.pure(oc)
     cancel = IO.unit
@@ -1025,7 +1028,7 @@ private final class IOFiber[A](
       if (cb != null)
         cb(RightUnit)
 
-      done(IOFiber.OutcomeCanceled.asInstanceOf[OutcomeIO[A]])
+      done(IOFiber.OutcomeCanceled.asInstanceOf[OutcomeIO[A]], conts)
     }
   }
 
@@ -1094,7 +1097,7 @@ private final class IOFiber[A](
       case 0 => mapK(result, depth, conts, objectState)
       case 1 => flatMapK(result, depth, conts, objectState)
       case 2 => cancelationLoopSuccessK(conts, objectState)
-      case 3 => runTerminusSuccessK(result)
+      case 3 => runTerminusSuccessK(result, conts)
       case 4 => evalOnSuccessK(result, conts, objectState)
       case 5 =>
         /* handleErrorWithK */
@@ -1138,7 +1141,7 @@ private final class IOFiber[A](
       /* (case 0) will never continue to mapK */
       /* (case 1) will never continue to flatMapK */
       case 2 => cancelationLoopFailureK(error, conts, objectState)
-      case 3 => runTerminusFailureK(error)
+      case 3 => runTerminusFailureK(error, conts)
       case 4 => evalOnFailureK(error, conts, objectState)
       case 5 => handleErrorWithK(error, depth, conts, objectState)
       case 6 => onCancelFailureK(error, depth, conts, objectState)
@@ -1199,7 +1202,7 @@ private final class IOFiber[A](
 
     resumeTag = DoneR
     if (canceled) {
-      done(IOFiber.OutcomeCanceled.asInstanceOf[OutcomeIO[A]])
+      done(IOFiber.OutcomeCanceled.asInstanceOf[OutcomeIO[A]], conts)
     } else {
       conts.push(RunTerminusK)
 
@@ -1369,7 +1372,7 @@ private final class IOFiber[A](
         cb.asInstanceOf[Either[Throwable, Unit] => Unit](RightUnit)
       }
       /* resume joiners */
-      done(IOFiber.OutcomeCanceled.asInstanceOf[OutcomeIO[A]])
+      done(IOFiber.OutcomeCanceled.asInstanceOf[OutcomeIO[A]], conts)
     }
 
     IOEndFiber
@@ -1384,13 +1387,13 @@ private final class IOFiber[A](
     cancelationLoopSuccessK(conts, objectState)
   }
 
-  private[this] def runTerminusSuccessK(result: Any): IO[Any] = {
-    done(Outcome.Succeeded(IO.pure(result.asInstanceOf[A])))
+  private[this] def runTerminusSuccessK(result: Any, conts: ByteStack): IO[Any] = {
+    done(Outcome.Succeeded(IO.pure(result.asInstanceOf[A])), conts)
     IOEndFiber
   }
 
-  private[this] def runTerminusFailureK(t: Throwable): IO[Any] = {
-    done(Outcome.Errored(t))
+  private[this] def runTerminusFailureK(t: Throwable, conts: ByteStack): IO[Any] = {
+    done(Outcome.Errored(t), conts)
     IOEndFiber
   }
 
