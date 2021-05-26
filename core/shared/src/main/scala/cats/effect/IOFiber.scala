@@ -993,10 +993,7 @@ private final class IOFiber[A](
     suspended.set(false)
 
     /* clear out literally everything to avoid any possible memory leaks */
-
-    /* conts may be null if the fiber was canceled before it was started */
-    if (conts != null)
-      conts.invalidate()
+    conts.invalidate()
 
     currentCtx = null
     ctxs.invalidate()
