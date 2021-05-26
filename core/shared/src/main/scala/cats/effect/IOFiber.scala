@@ -84,7 +84,7 @@ private final class IOFiber[A](
    * Ideally these would be on the stack, but they can't because we sometimes need to
    * relocate our runloop to another fiber.
    */
-  private[this] var conts: ByteStack = _
+  private[this] val conts: ByteStack = new ByteStack(16)
   private[this] val objectState = new ArrayStack[AnyRef](16)
 
   /* fast-path to head */
@@ -121,7 +121,7 @@ private final class IOFiber[A](
     // insert a read barrier after every async boundary
     readBarrier()
     (resumeTag: @switch) match {
-      case 0 => execR()
+      case 0 => execR(conts, objectState)
       case 1 => asyncContinueSuccessfulR(conts, objectState)
       case 2 => asyncContinueFailedR(conts, objectState)
       case 3 => blockingR(objectState)
@@ -150,7 +150,7 @@ private final class IOFiber[A](
           /* if we have async finalizers, runLoop may return early */
           IO.async_[Unit] { fin =>
             // println(s"${name}: canceller started at ${Thread.currentThread().getName} + ${suspended.get()}")
-            asyncCancel(fin)
+            asyncCancel(fin, conts, objectState)
           }
         } else {
           /*
@@ -216,7 +216,7 @@ private final class IOFiber[A](
     }
 
     if (shouldFinalize()) {
-      asyncCancel(null)
+      asyncCancel(null, conts, objectState)
     } else if (autoCedeIterations <= 0) {
       resumeIO = cur0
       resumeTag = AutoCedeR
@@ -514,7 +514,7 @@ private final class IOFiber[A](
           canceled = true
           if (isUnmasked()) {
             /* run finalizers immediately */
-            asyncCancel(null)
+            asyncCancel(null, conts, objectState)
           } else {
             runLoop(
               succeeded((), 0, conts, objectState),
@@ -643,7 +643,7 @@ private final class IOFiber[A](
                      * we were canceled, but since we have won the race on `suspended`
                      * via `resume`, `cancel` cannot run the finalisers, and we have to.
                      */
-                    asyncCancel(null)
+                    asyncCancel(null, conts, objectState)
                   }
                 } else {
                   /*
@@ -769,7 +769,7 @@ private final class IOFiber[A](
                */
               if (resume()) {
                 if (shouldFinalize())
-                  asyncCancel(null)
+                  asyncCancel(null, conts, objectState)
                 else
                   suspend()
               }
@@ -814,7 +814,7 @@ private final class IOFiber[A](
                * we were canceled, but `cancel` cannot run the finalisers
                * because the runloop was not suspended, so we have to run them
                */
-              asyncCancel(null)
+              asyncCancel(null, conts, objectState)
             }
           }
 
@@ -999,14 +999,17 @@ private final class IOFiber[A](
     finalizers.invalidate()
   }
 
-  private[this] def asyncCancel(cb: Either[Throwable, Unit] => Unit): Unit = {
+  private[this] def asyncCancel(
+      cb: Either[Throwable, Unit] => Unit,
+      conts: ByteStack,
+      objectState: ArrayStack[AnyRef]): Unit = {
     // System.out.println(s"running cancelation (finalizers.length = ${finalizers.unsafeIndex()})")
     finalizing = true
 
     if (!finalizers.isEmpty()) {
       objectState.push(cb)
 
-      conts = new ByteStack(16)
+      conts.clear()
       conts.push(CancelationLoopK)
 
       /* suppress all subsequent cancelation on this fiber */
@@ -1092,7 +1095,7 @@ private final class IOFiber[A](
       case 1 => flatMapK(result, depth, conts, objectState)
       case 2 => cancelationLoopSuccessK(conts, objectState)
       case 3 => runTerminusSuccessK(result)
-      case 4 => evalOnSuccessK(result, objectState)
+      case 4 => evalOnSuccessK(result, conts, objectState)
       case 5 =>
         /* handleErrorWithK */
         // this is probably faster than the pre-scan we do in failed, since handlers are rarer than flatMaps
@@ -1136,7 +1139,7 @@ private final class IOFiber[A](
       /* (case 1) will never continue to flatMapK */
       case 2 => cancelationLoopFailureK(error, conts, objectState)
       case 3 => runTerminusFailureK(error)
-      case 4 => evalOnFailureK(error, objectState)
+      case 4 => evalOnFailureK(error, conts, objectState)
       case 5 => handleErrorWithK(error, depth, conts, objectState)
       case 6 => onCancelFailureK(error, depth, conts, objectState)
       case 7 => uncancelableFailureK(error, depth, conts, objectState)
@@ -1191,14 +1194,13 @@ private final class IOFiber[A](
   // Implementations of resume methods //
   ///////////////////////////////////////
 
-  private[this] def execR(): Unit = {
+  private[this] def execR(conts: ByteStack, objectState: ArrayStack[AnyRef]): Unit = {
     // println(s"$name: starting at ${Thread.currentThread().getName} + ${suspended.get()}")
 
     resumeTag = DoneR
     if (canceled) {
       done(IOFiber.OutcomeCanceled.asInstanceOf[OutcomeIO[A]])
     } else {
-      conts = new ByteStack(16)
       conts.push(RunTerminusK)
 
       ctxs = new ArrayStack[ExecutionContext](2)
@@ -1392,7 +1394,10 @@ private final class IOFiber[A](
     IOEndFiber
   }
 
-  private[this] def evalOnSuccessK(result: Any, objectState: ArrayStack[AnyRef]): IO[Any] = {
+  private[this] def evalOnSuccessK(
+      result: Any,
+      conts: ByteStack,
+      objectState: ArrayStack[AnyRef]): IO[Any] = {
     val ec = popContext()
 
     if (!shouldFinalize()) {
@@ -1400,13 +1405,16 @@ private final class IOFiber[A](
       objectState.push(result.asInstanceOf[AnyRef])
       execute(ec)(this)
     } else {
-      asyncCancel(null)
+      asyncCancel(null, conts, objectState)
     }
 
     IOEndFiber
   }
 
-  private[this] def evalOnFailureK(t: Throwable, objectState: ArrayStack[AnyRef]): IO[Any] = {
+  private[this] def evalOnFailureK(
+      t: Throwable,
+      conts: ByteStack,
+      objectState: ArrayStack[AnyRef]): IO[Any] = {
     val ec = popContext()
 
     if (!shouldFinalize()) {
@@ -1414,7 +1422,7 @@ private final class IOFiber[A](
       objectState.push(t)
       execute(ec)(this)
     } else {
-      asyncCancel(null)
+      asyncCancel(null, conts, objectState)
     }
 
     IOEndFiber

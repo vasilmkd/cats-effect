@@ -46,6 +46,10 @@ private[effect] final class ByteStack(
   def unsafeSet(newI: Int): Unit =
     index = newI
 
+  def clear(): Unit = {
+    index = 0
+  }
+
   def invalidate(): Unit = {
     index = 0
     buffer = null
