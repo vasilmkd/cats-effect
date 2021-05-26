@@ -89,7 +89,7 @@ private final class IOFiber[A](
 
   /* fast-path to head */
   private[this] var currentCtx: ExecutionContext = startEC
-  private[this] var ctxs: ArrayStack[ExecutionContext] = _
+  private[this] val ctxs: ArrayStack[ExecutionContext] = new ArrayStack(2)
 
   private[this] var canceled: Boolean = false
   private[this] var masks: Int = initMask
@@ -999,7 +999,7 @@ private final class IOFiber[A](
       conts.invalidate()
 
     currentCtx = null
-    ctxs = null
+    ctxs.invalidate()
 
     objectState.invalidate()
 
@@ -1210,7 +1210,7 @@ private final class IOFiber[A](
     } else {
       conts.push(RunTerminusK)
 
-      ctxs = new ArrayStack[ExecutionContext](2)
+      ctxs.clear()
       ctxs.push(currentCtx)
 
       val io = resumeIO

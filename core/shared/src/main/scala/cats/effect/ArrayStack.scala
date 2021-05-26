@@ -55,6 +55,10 @@ private[effect] final class ArrayStack[A <: AnyRef](
     index = newI
   }
 
+  def clear(): Unit = {
+    index = 0
+  }
+
   def invalidate(): Unit = {
     index = 0
     buffer = null
