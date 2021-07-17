@@ -145,6 +145,7 @@ private final class IOFiber[A](
 
       /* check to see if the target fiber is suspended */
       if (resume()) {
+        deregisterSuspendedFiber()
         /* ...it was! was it masked? */
         if (isUnmasked()) {
           /* ...nope! take over the target fiber's runloop and run the finalizers */
@@ -579,6 +580,7 @@ private final class IOFiber[A](
               // println(s"cb loop sees suspended ${suspended.get} on fiber $name")
               /* try to take ownership of the runloop */
               if (resume()) {
+                deregisterSuspendedFiber()
                 // `resume()` is a volatile read of `suspended` through which
                 // `wasFinalizing` is published
                 if (finalizing == state.wasFinalizing) {
@@ -708,6 +710,7 @@ private final class IOFiber[A](
              * which ensures we will always see the most up-to-date value
              * for `canceled` in `shouldFinalize`, ensuring no finalisation leaks
              */
+            registerSuspendedFiber()
             suspended.getAndSet(true)
 
             /*
@@ -724,6 +727,7 @@ private final class IOFiber[A](
                * finalisers.
                */
               if (resume()) {
+                deregisterSuspendedFiber()
                 if (shouldFinalize())
                   asyncCancel(null)
                 else
@@ -985,8 +989,22 @@ private final class IOFiber[A](
   private[this] def resume(): Boolean =
     suspended.getAndSet(false)
 
-  private[this] def suspend(): Unit =
+  private[this] def suspend(): Unit = {
+    registerSuspendedFiber()
     suspended.set(true)
+  }
+
+  private[this] def registerSuspendedFiber(): Unit = {
+    if (currentCtx.isInstanceOf[WorkStealingThreadPool]) {
+      currentCtx.asInstanceOf[WorkStealingThreadPool].registerSuspendedFiber()
+    }
+  }
+
+  private[this] def deregisterSuspendedFiber(): Unit = {
+    if (currentCtx.isInstanceOf[WorkStealingThreadPool]) {
+      currentCtx.asInstanceOf[WorkStealingThreadPool].deregisterSuspendedFiber()
+    }
+  }
 
   /* returns the *new* context, not the old */
   private[this] def popContext(): ExecutionContext = {
