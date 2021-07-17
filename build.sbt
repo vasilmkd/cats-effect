@@ -312,7 +312,11 @@ lazy val core = crossProject(JSPlatform, JVMPlatform)
       ProblemFilters.exclude[MissingClassProblem]("cats.effect.SyncIO$Delay"),
       ProblemFilters.exclude[DirectMissingMethodProblem]("cats.effect.IO#IOCont.apply"),
       ProblemFilters.exclude[DirectMissingMethodProblem]("cats.effect.IO#IOCont.copy"),
-      ProblemFilters.exclude[DirectMissingMethodProblem]("cats.effect.IO#IOCont.this")
+      ProblemFilters.exclude[DirectMissingMethodProblem]("cats.effect.IO#IOCont.this"),
+      // introduced by #1789, MBeans
+      // changes to package private code
+      ProblemFilters.exclude[DirectMissingMethodProblem]("cats.effect.unsafe.HelperThread.this"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("cats.effect.unsafe.WorkerThread.this")
     )
   )
   .jvmSettings(
